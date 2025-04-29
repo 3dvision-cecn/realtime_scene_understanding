@@ -1,0 +1,24 @@
+video:
+  path: /home/eongan/ethz/3d_vision/epic_kitchens/videos/train_small/P01/P01_04.MP4
+
+hand_detection_mediapipe:
+  model_path: checkpoints/mediapipe/hand_landmarker.task
+
+hand_detection_yolo:
+  model_path: checkpoints/yolo/best.pt
+
+
+segmentation:
+  model_cfg: checkpoints/sam/sam2.1_hiera_l.yaml
+  model_path: checkpoints/sam/sam2.1_hiera_large.pt
+
+graph_generator:
+
+
+depth_generator:
+
+camera:
+  fx: 900
+  fy: 900
+  cx: 958.77
+  cy: 539.25

@@ -1,0 +1,6 @@
+outputs/
+checkpoints/
+*.pth
+*.pt
+__pycache__
+*.mp4

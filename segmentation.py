@@ -33,7 +33,7 @@ class Segmentation:
 
         # ───────────────── SAM-2 ──────────────────────────────────────────
         self.model = build_sam2(
-            cfg.model_cfg, cfg.model_path, apply_postprocessing=False
+            cfg.model_cfg, 'conf/'+cfg.model_path, apply_postprocessing=False
         )
         self.mask_generator = SAM2AutomaticMaskGenerator(self.model, points_per_side=32, points_per_batch=256)
 

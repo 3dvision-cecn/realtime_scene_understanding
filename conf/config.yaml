@@ -1,11 +1,11 @@
 video:
-  path: /home/eongan/ethz/3d_vision/epic_kitchens/videos/train_small/P01/P01_04.MP4
+  path: video.mp4
 
 hand_detection_mediapipe:
-  model_path: checkpoints/mediapipe/hand_landmarker.task
+  model_path: conf/checkpoints/mediapipe/hand_landmarker.task
 
 hand_detection_yolo:
-  model_path: checkpoints/yolo/best.pt
+  model_path: conf/checkpoints/yolo/best.pt
 
 
 segmentation:

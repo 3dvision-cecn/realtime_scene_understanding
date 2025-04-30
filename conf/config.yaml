@@ -1,5 +1,5 @@
 video:
-  path: video.mp4
+  path: video.MP4
 
 hand_detection_mediapipe:
   model_path: conf/checkpoints/mediapipe/hand_landmarker.task

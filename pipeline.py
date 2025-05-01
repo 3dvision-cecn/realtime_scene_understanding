@@ -16,13 +16,20 @@ from graph_generator import GraphGenerator
 from depth_generator import DepthGenerator
 
 
+# ──────────── CONFIGURE SEGMENT OUTPUT ────────────
+SEGMENT_OUTPUT_DIR = "/workspace/segmented_frames"
+os.makedirs(SEGMENT_OUTPUT_DIR, exist_ok=True)
+
+
 @hydra.main(config_path="conf", config_name="config", version_base=None)
 def main(cfg: DictConfig):
     rr.init("video_stream", spawn=False)  # spawn=True ⇒ open viewer
 
-    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    rec_path = os.path.join("/workspace", f"video_stream_{ts}.rrd")
-    rr.save(rec_path)                     # write to disk while logging 🡅
+    rr.serve_web_viewer(open_browser=False)
+
+    #ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    #rec_path = os.path.join("/workspace", f"video_stream_{ts}.rrd")
+    #rr.save(rec_path)                     # write to disk while logging 🡅
 
     video_loader = VideoLoader(cfg.video.path)
 
@@ -41,10 +48,12 @@ def main(cfg: DictConfig):
 
     # ---- Reduce to ~10 FPS ----
     last_process_ts = -float('inf')
-    target_interval = 1.0 / 1.0  # seconds between frames
+    target_interval = 1.0 / 10.0  # seconds between frames
 
+    itr = 0
     # processing loop
     while True:
+        itr+=1
         frame_rgb, timestamp = video_loader.next_frame()
 
         # only process at target FPS
@@ -79,6 +88,11 @@ def main(cfg: DictConfig):
 
         print(f"Segmentation took {t1 - t0:.3f} seconds")
         rr.log("segmentation/annotated_image", rr.Image(seg_img))
+
+        # ───── Save segmented frame ─────
+        seg_filename = os.path.join(SEGMENT_OUTPUT_DIR, f"seg_{itr}.png")
+        cv2.imwrite(seg_filename, seg_img)
+
 
         # Depth generation
         depth_map = depth_generator.estimate_depth(img)

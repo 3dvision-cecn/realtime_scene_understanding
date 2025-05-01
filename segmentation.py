@@ -5,21 +5,21 @@ import cv2
 import numpy as np
 import torch
 from PIL import Image
-from ultralytics import YOLO  # ➜  pip install -U ultralytics (v8 or v9)
+from ultralytics import YOLO  # ➜  pip install -U ultralytics
 
 import clip
 from sam2.build_sam import build_sam2
-from sam2.sam2_image_predictor import SAM2ImagePredictor  # <-- correct import
+from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 from typing import List, Dict, Any
 
 
 class Segmentation:
-    """Fast detector‑prompted **SAM‑2** segmentation with optional CLIP zero‑shot labels.
+    """Fast detector‑prompted **SAM‑2** segmentation with custom CLIP zero‑shot labels.
 
     1. **YOLO** at lower resolution → coarse boxes + class names.
     2. **SAM‑2** (`SAM2ImagePredictor`) refines each box to a pixel‑accurate mask.
-    3. (Optional) **CLIP** overrides class if detector confidence is low.
+    3. **CLIP** uses a custom vocab and prompt logic to (optionally) override labels.
     """
 
     def __init__(
@@ -41,49 +41,113 @@ class Segmentation:
         self.iou = iou
         self.zero_shot = zero_shot
 
-        # ────────────── 1️⃣ YOLO detector ───────────────────────────────
+        # ────────────── YOLO detector ───────────────────────────────
         weights = detector_weights or cfg.get("detector_weights", "yolov9c.pt")
         self.det = YOLO(weights).to(device)
         self.det_names = self.det.names
 
-        # ────────────── 2️⃣ SAM‑2 predictor (box prompt) ────────────────
-        sam_net = build_sam2(cfg.model_cfg, 'conf/'+cfg.model_path).to(device).eval()
+        # ────────────── SAM‑2 predictor (box prompt) ────────────────
+        sam_net = build_sam2(cfg.model_cfg, 'conf/' + cfg.model_path).to(device).eval()
         self.sam = SAM2ImagePredictor(sam_net)
-        self.sam.mask_threshold = 0.0  # we’ll binarise manually
+        self.sam.mask_threshold = 0.0  # binarise manually
 
-        # ────────────── 3️⃣ CLIP zero‑shot head (optional) ──────────────
+        # ────────────── CLIP zero‑shot head ─────────────────────────
         if self.zero_shot:
+            # load CLIP
             self.clip_model, self.clip_preprocess = clip.load("ViT-L/14@336px", device=device)
             self.clip_model.eval()
 
-            self.vocab = Path(vocab_path).read_text().splitlines() if vocab_path else [
-                "hand", "bottle", "cup", "desk", "box", "chair", "wooden table", "sink",
-                "water glass", "bag", "spoon", "fork", "knife", "plate", "bowl", "food",
+            # build vocab
+            if vocab_path:
+                self.vocab = Path(vocab_path).read_text().splitlines()
+            else:
+                self.vocab = [
+                "hand",
+                "bottle",
+                "cup",
+                "desk",
+                "box",
+                "chair",
+                "couch",
+                "wooden table",
+                "table",
+                "sink",
+                "water glass",
+                "bag",
+                "spoon",
+                "fork",
+                "knife",
+                "plate",
+                "bowl",
+                "food",
+                "fridge",
+                "stove",
+                "pan",
+                "plastic cutting board",
+                "paper towel",
+                "plastic bag",
+                "plastic container",
+                "plastic wrap",
+                "plastic cup",
+                "plastic bottle",
+                "kettle",
+                "oven",
+                "microwave",
+                "toaster",
+                "dishwasher",
+                "cutting board",
+                "groceries",
+                "fruits",
+                "vegetable",
+                "bread",
+                "milk",
+                "trash bin",
+                "lid",
+                "paper towel",
+                "peeler",
+                "wine",
+                "juice",
+                "rice cooker",
+                "cleaning rag",
+                "towel",
+                "door",
+                "cabinet",
+                "spice"
             ]
+
+            # prompts
+            SELF_PROMPTS = ["a close-up of a {}"]
+            # tokenize and embed text prompts
+            tokens = []
+            for prompt in SELF_PROMPTS:
+                texts = [prompt.format(v) for v in self.vocab]
+                tokens.append(clip.tokenize(texts).to(device))
             with torch.no_grad():
-                txt = clip.tokenize([f"a photo of a {v}" for v in self.vocab]).to(device)
-                self.text_emb = self.clip_model.encode_text(txt)
+                emb = [self.clip_model.encode_text(t) for t in tokens]
+                # normalize and average embeddings across prompts
+                text_embs = [e / e.norm(dim=-1, keepdim=True) for e in emb]
+                self.text_emb = torch.stack(text_embs).mean(0)
                 self.text_emb /= self.text_emb.norm(dim=-1, keepdim=True)
 
-    # ──────────────────────────────────────────────────────────────────
     @torch.no_grad()
     def segment(self, image: np.ndarray, timestamp_ms: int = 0):
         """Returns (masks, annotated_img)."""
-        # 🚦 YOLO detection
-        det_res = self.det(image, imgsz=self.imgsz, conf=self.conf, iou=self.iou, verbose=False)[0]
+        # YOLO detection
+        det_res = self.det(image, imgsz=self.imgsz, conf=self.conf,
+                           iou=self.iou, verbose=False)[0]
         if len(det_res.boxes) == 0:
-            return [], image  # nothing
+            return [], image
 
         boxes = det_res.boxes.xyxy.int().tolist()
         cls_ids = det_res.boxes.cls.int().tolist()
         confs = det_res.boxes.conf.tolist()
 
-        # 🖌️ SAM‑2 segmentation
+        # SAM‑2 segmentation
         self.sam.set_image(image)
         masks: List[Dict[str, Any]] = []
         for (x0, y0, x1, y1), cid, score in zip(boxes, cls_ids, confs):
             m_np, _, _ = self.sam.predict(box=np.array([x0, y0, x1, y1]), multimask_output=False)
-            mask_bool = m_np[0].astype(bool)  # first (only) mask
+            mask_bool = m_np[0].astype(bool)
             masks.append({
                 "segmentation": mask_bool,
                 "bbox": (x0, y0, x1, y1),
@@ -91,35 +155,44 @@ class Segmentation:
                 "prob": float(score),
             })
 
-        # 🔤 Optional CLIP relabel
-        if self.zero_shot:
-            masks = self._clip_label(image, masks)
+        # CLIP relabel (original logic)
+        if self.zero_shot and masks:
+            masks = self._clip_label_custom(image, masks)
 
+        # draw
         annotated = self._draw_masks_on_image(image.copy(), masks)
         return masks, annotated
 
-    # ──────────────────────────────────────────────────────────────────
-    def _clip_label(self, img: np.ndarray, masks: List[Dict[str, Any]]):
-        crops, keep = [], []
+    def _clip_label_custom(self, img: np.ndarray, masks: List[Dict[str, Any]]):
+        filtered = []
         for m in masks:
-            x0, y0, x1, y1 = m["bbox"]
-            crops.append(self.clip_preprocess(Image.fromarray(img[y0:y1, x0:x1])))
-            keep.append(m)
-        if not crops:
-            return masks
-        batch = torch.stack(crops).to(self.device)
-        with torch.no_grad():
-            img_emb = self.clip_model.encode_image(batch)
-            img_emb /= img_emb.norm(dim=-1, keepdim=True)
-            probs = (img_emb @ self.text_emb.T).softmax(-1)
-        for m, p in zip(keep, probs):
-            idx = int(p.argmax())
-            if p[idx] > 0.5:
-                m["label"] = self.vocab[idx]
-                m["prob"] = float(p[idx])
-        return masks
+            seg = m["segmentation"]
+            ys, xs = np.where(seg)
+            if ys.size == 0:
+                continue
+            # bounding box crop with padding
+            offset = 10
+            y0, y1 = max(ys.min() - offset, 0), min(ys.max() + offset, img.shape[0])
+            x0, x1 = max(xs.min() - offset, 0), min(xs.max() + offset, img.shape[1])
+            crop = img[y0:y1, x0:x1].copy()
+            pil = Image.fromarray(crop)
+            inp = self.clip_preprocess(pil).unsqueeze(0).to(self.device)
+            with torch.no_grad():
+                img_emb = self.clip_model.encode_image(inp)
+                img_emb /= img_emb.norm(dim=-1, keepdim=True)
+                logits = 100.0 * img_emb @ self.text_emb.T
+                probs = logits.softmax(dim=-1)[0]
+            best_idx = int(probs.argmax())
+            best_prob = float(probs[best_idx])
+            best_label = self.vocab[best_idx] if best_prob >= 0.5 else "unknown"
+            if best_label == "hand":
+                best_label = "unknown"
+            m["label"] = best_label
+            m["prob"] = best_prob
+            if best_label != "unknown":
+                filtered.append(m)
+        return filtered
 
-    # ──────────────────────────────────────────────────────────────────
     @staticmethod
     def _draw_masks_on_image(im: np.ndarray, masks: List[Dict[str, Any]]):
         overlay = im.copy()

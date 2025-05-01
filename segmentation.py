@@ -27,12 +27,13 @@ class Segmentation:
         cfg,
         *,
         detector_weights: str | Path | None = None,
-        imgsz: int = 640,
-        conf: float = 0.35,
-        iou: float = 0.6,
+        imgsz: int = 1280,
+        conf: float = 0.25,
+        iou: float = 0.7,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
         zero_shot: bool = True,
         vocab_path: str | None = None,
+        debug_dir: str | Path | None = None,       # ← NEW
     ):
         self.cfg = cfg
         self.device = device
@@ -41,8 +42,15 @@ class Segmentation:
         self.iou = iou
         self.zero_shot = zero_shot
 
+        # ────────────── DEBUG OUTPUT ───────────────────
+        if debug_dir is not None:
+            self.debug_dir = Path(debug_dir)
+            self.debug_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            self.debug_dir = None
+
         # ────────────── YOLO detector ───────────────────────────────
-        weights = detector_weights or cfg.get("detector_weights", "yolov9c.pt")
+        weights = detector_weights or cfg.get("detector_weights", "yolo11l.pt")
         self.det = YOLO(weights).to(device)
         self.det_names = self.det.names
 
@@ -130,7 +138,7 @@ class Segmentation:
                 self.text_emb /= self.text_emb.norm(dim=-1, keepdim=True)
 
     @torch.no_grad()
-    def segment(self, image: np.ndarray, timestamp_ms: int = 0):
+    def segment(self, image: np.ndarray, timestamp_ms: int = 0, iteration: int = 0):
         """Returns (masks, annotated_img)."""
         # YOLO detection
         det_res = self.det(image, imgsz=self.imgsz, conf=self.conf,
@@ -141,6 +149,25 @@ class Segmentation:
         boxes = det_res.boxes.xyxy.int().tolist()
         cls_ids = det_res.boxes.cls.int().tolist()
         confs = det_res.boxes.conf.tolist()
+
+        # ────────── DEBUG: save YOLO‐only overlay ──────────
+        if self.debug_dir is not None:
+            img_dbg = image.copy()
+            for (x0, y0, x1, y1), cid, score in zip(boxes, cls_ids, confs):
+                cv2.rectangle(img_dbg, (x0, y0), (x1, y1), (0, 255, 0), 2)
+                cv2.putText(
+                    img_dbg,
+                    f"{self.det_names[cid]} {score:.2f}",
+                    (x0, y0 - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 255, 0),
+                    1,
+                    cv2.LINE_AA,
+                )
+            debug_path = self.debug_dir / f"yolo_{iteration}.jpg"
+            cv2.imwrite(str(debug_path), img_dbg, [cv2.IMWRITE_JPEG_QUALITY, 60])
+
 
         # SAM‑2 segmentation
         self.sam.set_image(image)

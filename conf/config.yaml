@@ -11,6 +11,12 @@ hand_detection_yolo:
 segmentation:
   model_cfg: checkpoints/sam/sam2.1_hiera_l.yaml
   model_path: checkpoints/sam/sam2.1_hiera_large.pt
+  imgsz: 1280
+  conf: 0.25
+  iou: 0.7
+  zero_shot: True
+  debug_dir: "debug_yolo_frames"
+  vocab_path: None
 
 graph_generator:
 

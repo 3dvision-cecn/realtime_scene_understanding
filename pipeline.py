@@ -38,7 +38,7 @@ def main(cfg: DictConfig):
     # hand_detection = YoloHandDetection(cfg.hand_detection_yolo)
 
     # segmentation
-    segmentation = Segmentation(cfg.segmentation, debug_dir="debug_yolo_frames")
+    segmentation = Segmentation(cfg.segmentation)
 
     # depth generator
     depth_generator = DepthGenerator(cfg.depth_generator)

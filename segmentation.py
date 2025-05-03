@@ -24,50 +24,42 @@ class Segmentation:
 
     def __init__(
         self,
-        cfg,
-        *,
-        detector_weights: str | Path | None = None,
-        imgsz: int = 1280,
-        conf: float = 0.25,
-        iou: float = 0.7,
-        device: str = "cuda" if torch.cuda.is_available() else "cpu",
-        zero_shot: bool = True,
-        vocab_path: str | None = None,
-        debug_dir: str | Path | None = None,       # ← NEW
+        cfg
     ):
         self.cfg = cfg
-        self.device = device
-        self.imgsz = imgsz
-        self.conf = conf
-        self.iou = iou
-        self.zero_shot = zero_shot
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.imgsz = cfg.imgsz
+        self.conf = cfg.conf
+        self.iou = cfg.iou
+        self.zero_shot = cfg.zero_shot
+        self.vocab_path = cfg.vocab_path
 
         # ────────────── DEBUG OUTPUT ───────────────────
-        if debug_dir is not None:
-            self.debug_dir = Path(debug_dir)
+        if cfg.debug_dir is not None:
+            self.debug_dir = Path(cfg.debug_dir)
             self.debug_dir.mkdir(parents=True, exist_ok=True)
         else:
             self.debug_dir = None
 
         # ────────────── YOLO detector ───────────────────────────────
-        weights = detector_weights or cfg.get("detector_weights", "yolo11l.pt")
-        self.det = YOLO(weights).to(device)
+        weights = cfg.get("detector_weights", "yolo11l.pt")
+        self.det = YOLO(weights).to(self.device)
         self.det_names = self.det.names
 
         # ────────────── SAM‑2 predictor (box prompt) ────────────────
-        sam_net = build_sam2(cfg.model_cfg, 'conf/' + cfg.model_path).to(device).eval()
+        sam_net = build_sam2(cfg.model_cfg, 'conf/' + cfg.model_path).to(self.device).eval()
         self.sam = SAM2ImagePredictor(sam_net)
         self.sam.mask_threshold = 0.0  # binarise manually
 
         # ────────────── CLIP zero‑shot head ─────────────────────────
         if self.zero_shot:
             # load CLIP
-            self.clip_model, self.clip_preprocess = clip.load("ViT-L/14@336px", device=device)
+            self.clip_model, self.clip_preprocess = clip.load("ViT-L/14@336px", device=self.device)
             self.clip_model.eval()
 
             # build vocab
-            if vocab_path:
-                self.vocab = Path(vocab_path).read_text().splitlines()
+            if self.vocab_path:
+                self.vocab = Path(self.vocab_path).read_text().splitlines()
             else:
                 self.vocab = [
                 "hand",
@@ -129,7 +121,7 @@ class Segmentation:
             tokens = []
             for prompt in SELF_PROMPTS:
                 texts = [prompt.format(v) for v in self.vocab]
-                tokens.append(clip.tokenize(texts).to(device))
+                tokens.append(clip.tokenize(texts).to(self.device))
             with torch.no_grad():
                 emb = [self.clip_model.encode_text(t) for t in tokens]
                 # normalize and average embeddings across prompts

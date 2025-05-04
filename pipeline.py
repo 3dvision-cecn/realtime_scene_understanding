@@ -10,20 +10,17 @@ import time
 
 from video_loader import VideoLoader
 from hand_detection import HandDetection
-from yolo_hand_detection import HandDetection as YoloHandDetection
 from segmentation import Segmentation
 from graph_generator import GraphGenerator
-from depth_generator import DepthGenerator
-
+from red_loader import R3D_loader
 
 # ──────────── CONFIGURE SEGMENT OUTPUT ────────────
-SEGMENT_OUTPUT_DIR = "/workspace/segmented_frames"
-os.makedirs(SEGMENT_OUTPUT_DIR, exist_ok=True)
 
 
 @hydra.main(config_path="conf", config_name="config", version_base=None)
 def main(cfg: DictConfig):
-    rr.init("video_stream", spawn=False)  # spawn=True ⇒ open viewer
+    rr.init("video_stream", spawn=True)  # spawn=True ⇒ open viewer
+    rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
 
     rr.serve_web_viewer(open_browser=False)
 
@@ -31,7 +28,7 @@ def main(cfg: DictConfig):
     #rec_path = os.path.join("/workspace", f"video_stream_{ts}.rrd")
     #rr.save(rec_path)                     # write to disk while logging 🡅
 
-    video_loader = VideoLoader(cfg.video.path)
+    video_loader = R3D_loader(cfg.video)
 
     # hand detection
     hand_detection = HandDetection(cfg.hand_detection_mediapipe)
@@ -40,9 +37,6 @@ def main(cfg: DictConfig):
     # segmentation
     segmentation = Segmentation(cfg.segmentation)
 
-    # depth generator
-    depth_generator = DepthGenerator(cfg.depth_generator)
-
     # graph generator
     graph_generator = GraphGenerator(cfg.graph_generator)
 
@@ -50,11 +44,16 @@ def main(cfg: DictConfig):
     last_process_ts = -float('inf')
     target_interval = 1.0 / 10.0  # seconds between frames
 
+
+    SEGMENT_OUTPUT_DIR = "segmented_frames"
+    if cfg.pipeline.record_seg:
+        os.makedirs(SEGMENT_OUTPUT_DIR, exist_ok=True)
+
     itr = 0
     # processing loop
     while True:
         itr+=1
-        frame_rgb, timestamp = video_loader.next_frame()
+        frame_rgb, depth, pose, timestamp = video_loader.next_frame()
 
         # only process at target FPS
         if timestamp - last_process_ts < target_interval:
@@ -90,25 +89,16 @@ def main(cfg: DictConfig):
         rr.log("segmentation/annotated_image", rr.Image(seg_img))
 
         # ───── Save segmented frame ─────
-        seg_filename = os.path.join(SEGMENT_OUTPUT_DIR, f"seg_{itr}.png")
-        cv2.imwrite(seg_filename, seg_img, [cv2.IMWRITE_JPEG_QUALITY, 60])
+        if cfg.pipeline.record_seg:
+            seg_filename = os.path.join(SEGMENT_OUTPUT_DIR, f"seg_{itr}.png")
+            cv2.imwrite(seg_filename, seg_img, [cv2.IMWRITE_JPEG_QUALITY, 60])
 
+        # point cloud
+        rr.log("depth_map", rr.Image(depth))
 
-        # Depth generation
-        depth_map = depth_generator.estimate_depth(img)
-        rr.log("depth_map", rr.Image(depth_map))
-
-        # 3D point cloud
-        h, w = depth_map.shape
-        u, v = np.meshgrid(np.arange(w), np.arange(h))
-        fx, fy = cfg.camera.fx, cfg.camera.fy
-        cx, cy = cfg.camera.cx, cfg.camera.cy
-        Z = depth_map.astype(np.float32)
-        X = (u - cx) * Z / fx
-        Y = (v - cy) * Z / fy
-        points = np.stack((X, Y, Z), axis=-1).reshape(-1, 3)
-        colors = img.reshape(-1, 3) / 255.0
-        rr.log("point_cloud", rr.Points3D(points, colors=colors))
+        points, colors = video_loader.generate_pcd(frame_rgb, depth, pose)
+ 
+        rr.log("world/point_cloud", rr.Points3D(points, colors=colors))
 
         # Graph generation
         #graph, graph_img = graph_generator.generate_graph(img, masks, result)

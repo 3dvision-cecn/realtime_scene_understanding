@@ -4,3 +4,5 @@ checkpoints/
 *.pt
 __pycache__
 *.mp4
+conf/checkpoints
+recordings

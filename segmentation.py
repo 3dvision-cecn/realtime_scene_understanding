@@ -34,6 +34,9 @@ class Segmentation:
         self.zero_shot = cfg.zero_shot
         self.vocab_path = cfg.vocab_path
 
+        if self.vocab_path == "":
+            self.vocab_path = None
+
         # ────────────── DEBUG OUTPUT ───────────────────
         if cfg.debug_dir is not None:
             self.debug_dir = Path(cfg.debug_dir)

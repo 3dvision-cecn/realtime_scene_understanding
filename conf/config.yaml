@@ -1,5 +1,5 @@
 video:
-  path: video.MP4
+  path: recordings/efe_kitchen_tea/2025-05-04--19-55-15
 
 hand_detection_mediapipe:
   model_path: conf/checkpoints/mediapipe/hand_landmarker.task
@@ -15,8 +15,8 @@ segmentation:
   conf: 0.25
   iou: 0.7
   zero_shot: True
-  debug_dir: "debug_yolo_frames"
-  vocab_path: None
+  debug_dir: 
+  vocab_path: 
 
 graph_generator:
 
@@ -28,3 +28,7 @@ camera:
   fy: 900
   cx: 958.77
   cy: 539.25
+
+pipeline:
+  record_seg: False
+  record_boxes: False

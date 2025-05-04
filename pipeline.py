@@ -81,7 +81,7 @@ def main(cfg: DictConfig):
 
         # Segmentation
         masks, seg_img = segmentation.segment(
-            img, timestamp_ms=int(timestamp * 1000)
+            img, timestamp_ms=int(timestamp * 1000), iteration=itr
         )
 
         t1 = time.perf_counter()
@@ -91,7 +91,7 @@ def main(cfg: DictConfig):
 
         # ───── Save segmented frame ─────
         seg_filename = os.path.join(SEGMENT_OUTPUT_DIR, f"seg_{itr}.png")
-        cv2.imwrite(seg_filename, seg_img)
+        cv2.imwrite(seg_filename, seg_img, [cv2.IMWRITE_JPEG_QUALITY, 60])
 
 
         # Depth generation
@@ -111,8 +111,8 @@ def main(cfg: DictConfig):
         rr.log("point_cloud", rr.Points3D(points, colors=colors))
 
         # Graph generation
-        graph, graph_img = graph_generator.generate_graph(img, masks, result)
-        rr.log("graph_image", rr.Image(graph_img))
+        #graph, graph_img = graph_generator.generate_graph(img, masks, result)
+        #rr.log("graph_image", rr.Image(graph_img))
 
 
 if __name__ == "__main__":

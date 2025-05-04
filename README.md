@@ -33,3 +33,7 @@ poetry run python pipeline.py
 ```
 ln -s /home/$USER/dropbox/checkpoints/ conf/checkpoints
 ```
+```
+apt-get update
+apt-get install -y ffmpeg
+```

@@ -24,42 +24,42 @@ class Segmentation:
 
     def __init__(
         self,
-        cfg,
-        *,
-        detector_weights: str | Path | None = None,
-        imgsz: int = 640,
-        conf: float = 0.35,
-        iou: float = 0.6,
-        device: str = "cuda" if torch.cuda.is_available() else "cpu",
-        zero_shot: bool = True,
-        vocab_path: str | None = None,
+        cfg
     ):
         self.cfg = cfg
-        self.device = device
-        self.imgsz = imgsz
-        self.conf = conf
-        self.iou = iou
-        self.zero_shot = zero_shot
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.imgsz = cfg.imgsz
+        self.conf = cfg.conf
+        self.iou = cfg.iou
+        self.zero_shot = cfg.zero_shot
+        self.vocab_path = cfg.vocab_path
+
+        # ────────────── DEBUG OUTPUT ───────────────────
+        if cfg.debug_dir is not None:
+            self.debug_dir = Path(cfg.debug_dir)
+            self.debug_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            self.debug_dir = None
 
         # ────────────── YOLO detector ───────────────────────────────
-        weights = detector_weights or cfg.get("detector_weights", "yolov9c.pt")
-        self.det = YOLO(weights).to(device)
+        weights = cfg.get("detector_weights", "yolo11l.pt")
+        self.det = YOLO(weights).to(self.device)
         self.det_names = self.det.names
 
         # ────────────── SAM‑2 predictor (box prompt) ────────────────
-        sam_net = build_sam2(cfg.model_cfg, 'conf/' + cfg.model_path).to(device).eval()
+        sam_net = build_sam2(cfg.model_cfg, 'conf/' + cfg.model_path).to(self.device).eval()
         self.sam = SAM2ImagePredictor(sam_net)
         self.sam.mask_threshold = 0.0  # binarise manually
 
         # ────────────── CLIP zero‑shot head ─────────────────────────
         if self.zero_shot:
             # load CLIP
-            self.clip_model, self.clip_preprocess = clip.load("ViT-L/14@336px", device=device)
+            self.clip_model, self.clip_preprocess = clip.load("ViT-L/14@336px", device=self.device)
             self.clip_model.eval()
 
             # build vocab
-            if vocab_path:
-                self.vocab = Path(vocab_path).read_text().splitlines()
+            if self.vocab_path:
+                self.vocab = Path(self.vocab_path).read_text().splitlines()
             else:
                 self.vocab = [
                 "hand",
@@ -121,7 +121,7 @@ class Segmentation:
             tokens = []
             for prompt in SELF_PROMPTS:
                 texts = [prompt.format(v) for v in self.vocab]
-                tokens.append(clip.tokenize(texts).to(device))
+                tokens.append(clip.tokenize(texts).to(self.device))
             with torch.no_grad():
                 emb = [self.clip_model.encode_text(t) for t in tokens]
                 # normalize and average embeddings across prompts
@@ -130,7 +130,7 @@ class Segmentation:
                 self.text_emb /= self.text_emb.norm(dim=-1, keepdim=True)
 
     @torch.no_grad()
-    def segment(self, image: np.ndarray, timestamp_ms: int = 0):
+    def segment(self, image: np.ndarray, timestamp_ms: int = 0, iteration: int = 0):
         """Returns (masks, annotated_img)."""
         # YOLO detection
         det_res = self.det(image, imgsz=self.imgsz, conf=self.conf,
@@ -141,6 +141,25 @@ class Segmentation:
         boxes = det_res.boxes.xyxy.int().tolist()
         cls_ids = det_res.boxes.cls.int().tolist()
         confs = det_res.boxes.conf.tolist()
+
+        # ────────── DEBUG: save YOLO‐only overlay ──────────
+        if self.debug_dir is not None:
+            img_dbg = image.copy()
+            for (x0, y0, x1, y1), cid, score in zip(boxes, cls_ids, confs):
+                cv2.rectangle(img_dbg, (x0, y0), (x1, y1), (0, 255, 0), 2)
+                cv2.putText(
+                    img_dbg,
+                    f"{self.det_names[cid]} {score:.2f}",
+                    (x0, y0 - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 255, 0),
+                    1,
+                    cv2.LINE_AA,
+                )
+            debug_path = self.debug_dir / f"yolo_{iteration}.jpg"
+            cv2.imwrite(str(debug_path), img_dbg, [cv2.IMWRITE_JPEG_QUALITY, 60])
+
 
         # SAM‑2 segmentation
         self.sam.set_image(image)

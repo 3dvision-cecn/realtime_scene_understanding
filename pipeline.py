@@ -9,7 +9,7 @@ import datetime, os
 import time
 
 from video_loader import VideoLoader
-from hand_detection import HandDetection
+from hand_detection_hamer import HandDetection
 from segmentation import Segmentation
 from graph_generator import GraphGenerator
 from red_loader import R3D_loader
@@ -31,7 +31,7 @@ def main(cfg: DictConfig):
     video_loader = R3D_loader(cfg.video)
 
     # hand detection
-    hand_detection = HandDetection(cfg.hand_detection_mediapipe)
+    hand_detection = HandDetection(cfg.hand_detection_hamer)
     # hand_detection = YoloHandDetection(cfg.hand_detection_yolo)
 
     # segmentation
@@ -95,9 +95,7 @@ def main(cfg: DictConfig):
 
         # point cloud
         rr.log("depth_map", rr.Image(depth))
-
-        points, colors = video_loader.generate_pcd(frame_rgb, depth, pose)
- 
+        points, colors = video_loader.generate_pcd(hd_img, depth, pose)
         rr.log("world/point_cloud", rr.Points3D(points, colors=colors))
 
         # Graph generation

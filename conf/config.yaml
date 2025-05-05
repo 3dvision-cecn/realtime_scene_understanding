@@ -7,6 +7,9 @@ hand_detection_mediapipe:
 hand_detection_yolo:
   model_path: conf/checkpoints/yolo/best.pt
 
+hand_detection_hamer:
+  checkpoint: conf/checkpoints/hamer_ckpts/checkpoints/hamer.ckpt
+  body_detector: "vitdet"
 
 segmentation:
   model_cfg: checkpoints/sam/sam2.1_hiera_l.yaml
@@ -31,4 +34,3 @@ camera:
 
 pipeline:
   record_seg: False
-  record_boxes: False

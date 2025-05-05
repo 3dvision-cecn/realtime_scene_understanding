@@ -1,3 +1,6 @@
 [submodule "third_party/hamer"]
 	path = third_party/hamer
 	url = git@github.com:3dvision-cecn/hamer.git
+[submodule "third_party/CLIP"]
+	path = third_party/CLIP
+	url = https://github.com/openai/CLIP.git

@@ -159,8 +159,15 @@ class HandDetection:
             annotated_image = (rgb.astype(np.float32) * alpha_3 +
                                annotated_image * (1 - alpha_3))
             annotated_image = annotated_image.astype(np.uint8)
+
+            hand_data = {
+                "verts": all_verts,         # list of (778, 3) np.ndarrays
+                "cam_t": all_cam_t,         # list of (3,) np.ndarrays
+                "is_right": all_right,       # list of bools or ints
+                "box_centers": [bc.cpu().numpy().tolist() for bc in box_center],  # ADD THIS
+            }
             
-            return None, annotated_image
+            return hand_data, annotated_image
 
         return None, image
 

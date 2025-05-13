@@ -22,8 +22,8 @@ class GraphGenerator:
     ):
         overlap_thresh: float = 0.15,      # α  –  holding if ≥15 % overlap
         near_thresh: float = 80.0,         # δ  –  pixels for 'near'
-        self.alpha = overlap_thresh
-        self.delta = near_thresh
+        self.alpha = 0.15 #overlap_thresh
+        self.delta = 80.0 #near_thresh
 
     # ------------------------------------------------------------------ #
     def _centroid(self, mask: np.ndarray) -> Tuple[float, float]:
@@ -36,7 +36,8 @@ class GraphGenerator:
         self,
         image: np.ndarray,
         masks: List[Dict[str, Any]],
-        hands: List[List[Tuple[float, float, float]]],
+        hand_data: dict,
+        #hands: List[List[Tuple[float, float, float]]],
     ) -> nx.Graph:
         """
         Parameters
@@ -52,7 +53,7 @@ class GraphGenerator:
         """
         G = nx.Graph()
 
-        hand_landmarks = hands.hand_landmarks
+        #hand_landmarks = hands.hand_landmarks
 
         # 1) add object nodes --------------------------------------------
         for i, m in enumerate(masks):
@@ -67,6 +68,7 @@ class GraphGenerator:
             m["node"] = node_id   # keep reference for later
         H, W = image.shape[:2]
         # 2) add hand nodes ----------------------------------------------
+        '''
         for hidx, hand in enumerate(hand_landmarks):
             cx = [landmark.x * W for landmark in hand]
             cy = [landmark.y * H for landmark in hand]
@@ -75,13 +77,48 @@ class GraphGenerator:
             cx = float(np.mean(cx))
             cy = float(np.mean(cy))
             G.add_node(node_id, type="hand", centroid=(cx, cy))
+        '''
+        for hidx, center in enumerate(hand_data["box_centers"]):
+            #verts_2d = verts[:, :2]  # drop z
+            cx, cy = center #verts_2d.mean(axis=0)
 
+            node_id = f"hand_{hidx}"
+            G.add_node(
+                node_id,
+                type="hand",
+                centroid=(cx, cy),
+                cam_t=hand_data["cam_t"][hidx], #.tolist(),     # optional: for future 3D use
+                is_right=bool(hand_data["is_right"][hidx])   # optional: left/right hand info
+            )        
         # 3) holding edges -----------------------------------------------
         for m in masks:
             obj_node = m["node"]
             seg = m["segmentation"]
-
             obj_area = seg.sum()
+            for hidx, verts in enumerate(hand_data["verts"]):
+                verts_2d = verts[:, :2]
+                xs = verts_2d[:, 0]
+                ys = verts_2d[:, 1]
+
+                x0, x1 = int(xs.min()), int(xs.max())
+                y0, y1 = int(ys.min()), int(ys.max())
+
+                # Clamp to image bounds
+                x0 = max(x0, 0)
+                y0 = max(y0, 0)
+                x1 = min(x1, seg.shape[1] - 1)
+                y1 = min(y1, seg.shape[0] - 1)
+
+                # Create a hand region mask
+                hand_mask = np.zeros_like(seg, dtype=bool)
+                hand_mask[y0:y1 + 1, x0:x1 + 1] = True
+
+                overlap = np.logical_and(seg, hand_mask).sum() / obj_area
+
+                if overlap >= self.alpha:
+                    G.add_edge(f"hand_{hidx}", obj_node, relation="holding")
+
+            '''
             for hidx, hand in enumerate(hand_landmarks):
                 # build a small binary mask for hand bbox
                 xs = [landmark.x * W for landmark in hand]
@@ -94,6 +131,7 @@ class GraphGenerator:
                 overlap = np.logical_and(seg, hand_mask).sum() / obj_area
                 if overlap >= self.alpha:
                     G.add_edge(f"hand_{hidx}", obj_node, relation="holding")
+            '''
 
         # 4) near edges (objects↔objects, hands↔objects) ------------------
         nodes = list(G.nodes(data=True))
@@ -114,54 +152,54 @@ class GraphGenerator:
 
 
     def draw_graph(self, G: nx.Graph) -> np.ndarray:
-            """
-            Render *G* to a Matplotlib figure and return it as a uint8 RGB array.
+        pos = {n: d["centroid"] for n, d in G.nodes(data=True)}
+        node_colors = [
+            "#FFD447" if G.nodes[n]["type"] == "hand" else "#4682B4"
+            for n in G.nodes
+        ]
+        labels = nx.get_node_attributes(G, "label")
 
-            Returns
-            -------
-            np.ndarray  –  shape (H, W, 3), dtype=uint8, RGB
-            """
-            pos = {n: d["centroid"] for n, d in G.nodes(data=True)}
-            node_colors = [
-                "#FFD447" if G.nodes[n]["type"] == "hand" else "#4682B4"
-                for n in G.nodes
-            ]
-            labels = nx.get_node_attributes(G, "label")
+        # Set your fixed image resolution here
+        W, H = 1920, 1080
 
-            fig = plt.figure(figsize=(6, 4), dpi=150)
-            ax = fig.add_subplot(111)
-            ax.axis("off")
+        fig = plt.figure(figsize=(W / 150, H / 150), dpi=150)  # Keep scaling consistent
+        ax = fig.add_subplot(111)
+        ax.set_aspect('equal')
 
-            nx.draw(
-                G,
-                pos=pos,
-                labels=labels,
-                with_labels=True,
-                ax=ax,
-                node_color=node_colors,
-                node_size=1000,
-                font_size=10,
-                font_color="black",
-                edge_color="#555555",
-                width=10.5,
-            )
+        # Match image orientation
+        ax.set_xlim(0, W)
+        ax.set_ylim(H, 0)  # critical: invert y-axis
+        ax.axis("off")
 
-            edge_labels = {
-                (u, v): d["relation"]
-                if d["relation"] != "near"
-                else f"near\n{int(d['distance']):d}px"
-                for u, v, d in G.edges(data=True)
-            }
-            nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=7, ax=ax)
+        nx.draw(
+            G,
+            pos=pos,
+            labels=labels,
+            with_labels=True,
+            ax=ax,
+            node_color=node_colors,
+            node_size=1000,
+            font_size=10,
+            font_color="black",
+            edge_color="#555555",
+            width=3.0,
+        )
 
-            # ------ convert canvas → RGB numpy array -------------------------
-            fig.tight_layout(pad=0)
-            fig.canvas.draw()                       # make sure the renderer exists
-            renderer = fig.canvas.get_renderer()
+        edge_labels = {
+            (u, v): d["relation"]
+            if d["relation"] != "near"
+            else f"near\n{int(d['distance']):d}px"
+            for u, v, d in G.edges(data=True)
+        }
+        nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=7, ax=ax)
 
-            h, w = int(renderer.height), int(renderer.width)   # ← cast to int
+        # Convert canvas → RGB image
+        fig.tight_layout(pad=0)
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        h, w = int(renderer.height), int(renderer.width)
 
-            rgba = np.frombuffer(renderer.buffer_rgba(), dtype=np.uint8)
-            rgb  = rgba.reshape(h, w, 4)[..., :3].copy()       # (H,W,3) uint8
-            plt.close(fig)
-            return rgb
+        rgba = np.frombuffer(renderer.buffer_rgba(), dtype=np.uint8)
+        rgb = rgba.reshape(h, w, 4)[..., :3].copy()
+        plt.close(fig)
+        return rgb

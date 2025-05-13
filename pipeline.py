@@ -71,7 +71,7 @@ def main(cfg: DictConfig):
         rr.log("raw_video/frame", rr.Image(img).compress(jpeg_quality=85))
 
         # Hand detection
-        result, hd_img = hand_detection.detect_hands(
+        hand_data, hd_img = hand_detection.detect_hands(
             img, timestamp_ms=int(timestamp * 1000)
         )
         rr.log("hand_detection/annotated_image", rr.Image(hd_img))
@@ -99,8 +99,9 @@ def main(cfg: DictConfig):
         rr.log("world/point_cloud", rr.Points3D(points, colors=colors))
 
         # Graph generation
-        #graph, graph_img = graph_generator.generate_graph(img, masks, result)
-        #rr.log("graph_image", rr.Image(graph_img))
+        if hand_data is not None:
+         graph, graph_img = graph_generator.generate_graph(img, masks, hand_data)
+         rr.log("graph_image", rr.Image(graph_img))
 
 
 if __name__ == "__main__":

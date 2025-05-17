@@ -12,6 +12,8 @@ from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 from typing import List, Dict, Any
+from object import Object
+import uuid
 
 
 class Segmentation:
@@ -36,6 +38,8 @@ class Segmentation:
 
         if self.vocab_path == "":
             self.vocab_path = None
+
+        self.objects = []
 
         # ────────────── DEBUG OUTPUT ───────────────────
         if cfg.debug_dir is not None:
@@ -145,45 +149,28 @@ class Segmentation:
         cls_ids = det_res.boxes.cls.int().tolist()
         confs = det_res.boxes.conf.tolist()
 
-        # ────────── DEBUG: save YOLO‐only overlay ──────────
-        if self.debug_dir is not None:
-            img_dbg = image.copy()
-            for (x0, y0, x1, y1), cid, score in zip(boxes, cls_ids, confs):
-                cv2.rectangle(img_dbg, (x0, y0), (x1, y1), (0, 255, 0), 2)
-                cv2.putText(
-                    img_dbg,
-                    f"{self.det_names[cid]} {score:.2f}",
-                    (x0, y0 - 5),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (0, 255, 0),
-                    1,
-                    cv2.LINE_AA,
-                )
-            debug_path = self.debug_dir / f"yolo_{iteration}.jpg"
-            cv2.imwrite(str(debug_path), img_dbg, [cv2.IMWRITE_JPEG_QUALITY, 60])
-
-
         # SAM‑2 segmentation
         self.sam.set_image(image)
-        masks: List[Dict[str, Any]] = []
+
+        # change to a object centric data structure
+        new_objects = []
         for (x0, y0, x1, y1), cid, score in zip(boxes, cls_ids, confs):
             m_np, _, _ = self.sam.predict(box=np.array([x0, y0, x1, y1]), multimask_output=False)
             mask_bool = m_np[0].astype(bool)
-            masks.append({
-                "segmentation": mask_bool,
-                "bbox": (x0, y0, x1, y1),
-                "label": self.det_names[cid],
-                "prob": float(score),
-            })
+            object = Object(self.det_names[cid], uuid.uuid4())
+            object.mask = mask_bool
+            object.bbox = (x0, y0, x1, y1)
+            object.timestamp = timestamp_ms
+            new_objects.append(object)
+            print(f" Addded a new object {object}")
 
-        # CLIP relabel (original logic)
-        if self.zero_shot and masks:
-            masks = self._clip_label_custom(image, masks)
+        # track the objects with sift
 
-        # draw
-        annotated = self._draw_masks_on_image(image.copy(), masks)
-        return masks, annotated
+
+        self.last_frame = image.copy()
+        # annotated = self._draw_masks_on_image(image.copy(), masks)
+        return self.objects, image
+
 
     def _clip_label_custom(self, img: np.ndarray, masks: List[Dict[str, Any]]):
         filtered = []
@@ -230,3 +217,5 @@ class Segmentation:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
         cv2.addWeighted(overlay, 0.5, im, 0.5, 0, dst=im)
         return im
+
+

@@ -91,11 +91,6 @@ def main(cfg: DictConfig):
         print(f"Segmentation took {t1 - t0:.3f} seconds")
         stream.log("segmentation/annotated_image", rr.Image(seg_img).compress(jpeg_quality=85))
 
-        # ───── Save segmented frame ─────
-        if cfg.pipeline.record_seg:
-            seg_filename = os.path.join(SEGMENT_OUTPUT_DIR, f"seg_{itr}.png")
-            cv2.imwrite(seg_filename, seg_img, [cv2.IMWRITE_JPEG_QUALITY, 60])
-
         # point cloud
         stream.log("depth_map", rr.Image(depth).compress(jpeg_quality=85))
         #points, colors = video_loader.generate_pcd(hd_img, depth, pose)

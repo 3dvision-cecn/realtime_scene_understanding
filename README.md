@@ -38,3 +38,22 @@ ln -s /home/$USER/dropbox/checkpoints/ conf/checkpoints
 apt-get update
 apt-get install -y ffmpeg
 ```
+
+
+To stream rerun to local:
+
+1. run
+```
+#!/usr/bin/env bash
+
+# Forward remote ports 9090 (HTTP) and 9877 (WebSocket) back to your laptop:
+ssh -i ~/.ssh/id_ed25519 -p 10351 \
+    -L 9090:localhost:9090 \
+    -L 9876:localhost:9876 \
+    root@213.173.109.196
+```
+
+2. run
+```
+ rerun --connect rerun+http://localhost:9876/proxy
+```

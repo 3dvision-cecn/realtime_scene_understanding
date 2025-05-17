@@ -15,7 +15,7 @@ segmentation:
   model_cfg: checkpoints/sam/sam2.1_hiera_l.yaml
   model_path: checkpoints/sam/sam2.1_hiera_large.pt
   imgsz: 1280
-  conf: 0.25
+  conf: 0.1
   iou: 0.7
   zero_shot: True
   debug_dir: 

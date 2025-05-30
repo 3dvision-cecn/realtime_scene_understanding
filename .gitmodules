@@ -4,3 +4,6 @@
 [submodule "third_party/CLIP"]
 	path = third_party/CLIP
 	url = https://github.com/openai/CLIP.git
+[submodule "third_party/EdgeTAM"]
+	path = third_party/EdgeTAM
+	url = https://github.com/facebookresearch/EdgeTAM.git

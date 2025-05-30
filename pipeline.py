@@ -55,6 +55,9 @@ def main(cfg: DictConfig):
         itr+=1
         frame_rgb, depth, pose, timestamp = video_loader.next_frame()
 
+        pixel_indexed_pcd = video_loader.generate_pixel_indexed_pcd(frame_rgb, depth, pose)
+
+
         # only process at target FPS
         if timestamp - last_process_ts < target_interval:
             continue
@@ -80,7 +83,7 @@ def main(cfg: DictConfig):
 
         # Segmentation
         objects, seg_img = segmentation.segment(
-            img, timestamp_ms=int(timestamp * 1000), iteration=itr
+            img, pixel_indexed_pcd, timestamp_ms=int(timestamp * 1000), iteration=itr
         )
 
         t1 = time.perf_counter()

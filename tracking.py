@@ -2,31 +2,29 @@ import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torchvision import models, transforms
 from sam2.build_sam import build_sam2
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 from hydra.core.global_hydra import GlobalHydra
 import hydra
 from omegaconf import DictConfig
 from transformers import AutoProcessor, AutoModelForVision2Seq
-from ultralytics import FastSAM
+import rerun as rr
 
-VIDEO_SRC = "video.mp4"  # 0 for webcam
-MODEL_CFG = "checkpoints/sam/sam2.1_hiera_l.yaml"
-CHECKPOINT_PATH = "conf/checkpoints/sam/sam2.1_hiera_large.pt"
-MASK_ALPHA = 0.8
-EDGE_OFFSET = 5
-EMBED_SIM_THRESH = 0.8  # cosine threshold for ResNet embeddings
-IOU_THRESH = 0.1        # minimum IoU for accepting new segmentation
-FRAME_BLUR_THRESH = 15.0  # variance threshold for whole-frame blur
-MAX_RADIUS = 250  # maximum radius for VLM asking
-MIN_RADIUS = 50  # minimum radius for VLM asking
+import torch
+import open3d as o3d
+from scipy.spatial.transform import Rotation
+
+
+
+
+
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
 
-def prepare_sam(cfg_path: str, ckpt_path: str, device: str):
-    sam = build_sam2(cfg_path, ckpt_path, device=device, apply_postprocessing=False)
+def prepare_sam(cfg):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    sam = build_sam2(cfg.model_cfg, "conf/" + cfg.model_path, device=device, apply_postprocessing=False)
     sam = torch.compile(sam, mode="reduce-overhead", fullgraph=True)
 
     return SAM2AutomaticMaskGenerator(
@@ -39,64 +37,22 @@ def prepare_sam(cfg_path: str, ckpt_path: str, device: str):
     )
 
 
-def dilate_mask(mask: np.ndarray, offset: int) -> np.ndarray:
-    if offset <= 0:
-        return mask
-    kernel = cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE, (offset * 2 + 1, offset * 2 + 1)
-    )
-    return cv2.dilate(mask, kernel)
+def remove_outliers_pcd(pcd: np.ndarray, threshold: float = 0.1) -> np.ndarray:
+    # create a o3d point cloud
+    pcd_o3d = o3d.geometry.PointCloud()
+    pcd_o3d.points = o3d.utility.Vector3dVector(pcd[:, :3])
+    pcd_o3d.colors = o3d.utility.Vector3dVector(pcd[:, 3:6])
+    # knn search for neighbors
+    labels = np.asarray(pcd_o3d.cluster_dbscan(eps=threshold, min_points=10, print_progress=False))
+    labels_noise = np.where(labels == -1, 1, 0)
+    labels_clean = np.where(labels == 0, 1, 0)   
+    num_clean = np.sum(labels_clean)
 
+    pcd_np = np.zeros(((num_clean), 6), dtype=np.float32)
+    pcd_np[:, :3] = np.asarray(pcd_o3d.points)[labels_clean == 1]
+    pcd_np[:, 3:6] = np.asarray(pcd_o3d.colors)[labels_clean == 1]
+    return pcd_np
 
-def mask_centroid(mask: np.ndarray):
-    ys, xs = np.where(mask)
-    if len(xs) == 0:
-        return None
-    return (int(xs.mean()), int(ys.mean()))
-
-
-def blend_masks(image: np.ndarray, masks: list, alpha: float = 0.45) -> np.ndarray:
-    overlay = np.zeros_like(image, dtype=np.uint8)
-    for m in masks:
-        overlay[m['segmentation']] = m.get('color', (0, 255, 0))
-    return cv2.addWeighted(image, 1.0, overlay, alpha, 0)
-
-
-def compute_hsv_hist(frame_bgr: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
-    hist = cv2.calcHist([hsv], [0,1,2], mask, [8,8,8], [0,180,0,256,0,256])
-    hist = cv2.normalize(hist, hist).flatten()
-    return hist.astype(np.float32)
-
-
-def mask_iou(a: np.ndarray, b: np.ndarray) -> float:
-    inter = np.logical_and(a, b).sum()
-    union = np.logical_or(a, b).sum()
-    return inter / union if union > 0 else 0.0
-
-# -----------------------------------------------------------------------------
-# ResNet-50 embedder (RGB, motion-blur tolerant)
-# -----------------------------------------------------------------------------
-
-def build_embedder(device: str):
-    model = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
-    model = torch.nn.Sequential(*(list(model.children())[:-1]))
-    model.eval().to(device)
-    preprocess = transforms.Compose([
-        transforms.ToPILImage(),
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225])
-    ])
-    return model, preprocess
-
-
-def extract_embedding(model, preprocess, patch: np.ndarray, device: str) -> np.ndarray:
-    with torch.no_grad():
-        t = preprocess(patch).unsqueeze(0).to(device)
-        feat = model(t).squeeze()
-        feat = F.normalize(feat.float(), dim=0)
-    return feat.cpu().numpy()
 
 # -----------------------------------------------------------------------------
 # Vision-Language Model (caption/identify objects)
@@ -177,32 +133,99 @@ def mask_radius(mask: np.ndarray) -> int:
 
 
 # -----------------------------------------------------------------------------
-# Re-identification DB: ResNet embeddings + HSV histograms
+# Database for Objects
 # -----------------------------------------------------------------------------
 
-class ReIDDatabase:
+class Object:
+    def __init__(self, unqiue_id: int, name: str, voxels: np.ndarray, centroids: np.ndarray):
+        self.unique_id = unqiue_id
+        self.name = name
+        self.voxels = voxels
+        self.centroids = centroids
+
+
+
+
+class ObjectDatabase:
     def __init__(self):
-        self._db_embed, self._db_hist = {}, {}
-        self._next_id = 0
-    def _new_id(self):
-        oid = self._next_id; self._next_id+=1; return oid
-    def _cosine(self,a,b): return float(np.dot(a,b))
-    def assign_id(self,embed, hist):
-        if not self._db_embed: return self._new_id()
-        best_id,best_s=None,-1
-        for oid in self._db_embed:
-            se=self._cosine(embed,self._db_embed[oid])
-            sh=(cv2.compareHist(hist,self._db_hist[oid],cv2.HISTCMP_CORREL)+1)/2
-            sc=0.5*se+0.5*sh
-            if sc>best_s: best_id,best_s=oid,sc
-        return best_id if best_s>=EMBED_SIM_THRESH else self._new_id()
-    def update(self,oid,embed, hist):
-        if oid in self._db_embed:
-            e=0.0*self._db_embed[oid]+1.0*embed
-            self._db_embed[oid]=F.normalize(torch.tensor(e),dim=0).cpu().numpy()
-            self._db_hist[oid]=0.0*self._db_hist[oid]+1.0*hist
-        else:
-            self._db_embed[oid]=embed; self._db_hist[oid]=hist
+        self.objects = {}
+        self.next_id = 0
+
+    def add_object(self, name: str, voxels: np.ndarray, centroids: np.ndarray):
+        # Check for existing object by voxel overlap
+        match_id = self.find_matching_object(voxels, centroids, 0.15)
+        if match_id is not None:
+            # Optionally update the object voxels here if you want
+            unique_voxels_map = {tuple(v.grid_index): v for v in self.objects[match_id].voxels}
+            # Add/update with the new voxels passed to this method
+            for new_voxel in voxels: 
+                unique_voxels_map[tuple(new_voxel.grid_index)] = new_voxel
+            self.objects[match_id].voxels = np.asarray(list(unique_voxels_map.values()))
+            return match_id
+        # Add as new object
+        obj = Object(self.next_id, name, voxels, centroids)
+        self.objects[self.next_id] = obj
+        self.next_id += 1
+        return self.next_id - 1
+
+    def get_neighbors(self, index):
+        x, y, z = index
+        neighbors = []
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                for dz in [-1, 0, 1]:
+                    if dx == 0 and dy == 0 and dz == 0:
+                        continue
+                    neighbors.append((x+dx, y+dy, z+dz))
+        return neighbors
+
+    def expand_voxel_set(self, vox_set):
+        expanded = set(vox_set)
+        for idx in vox_set:
+            expanded.update(self.get_neighbors(idx))
+        return expanded
+
+    def find_matching_object(self, voxels: np.ndarray, centeroids: np.ndarray, overlap_thresh: float = 0.3):
+        """Return object id if overlap with any object is above threshold, else None.
+        Considers neighboring voxels in overlap calculation."""
+        if len(voxels) == 0:
+            return None
+
+        # Convert to set of tuples for fast overlap computation
+        vox_set = set(tuple(v.grid_index) for v in voxels)
+        # Expand with neighbors
+        vox_set_expanded = self.expand_voxel_set(vox_set)
+
+        for obj_id, obj in self.objects.items():
+            # if centroid distance is too far, skip
+            dist = np.linalg.norm(obj.centroids - centeroids)
+            if dist > 0.2:
+                continue
+
+            obj_vox_set = set(tuple(v.grid_index) for v in obj.voxels)
+            obj_vox_set_expanded = self.expand_voxel_set(obj_vox_set)
+
+            # Compute overlap on expanded sets
+            intersection = len(vox_set_expanded & obj_vox_set_expanded)
+            union = len(vox_set_expanded | obj_vox_set_expanded)
+            if union == 0:
+                continue
+            overlap = intersection / union
+            print(f"Overlap with object {obj_id}: {overlap:.2f} Num inersection: {intersection} Num union: {union}")
+            if overlap > overlap_thresh:
+                return obj_id
+        return None
+
+
+    def get_object(self, unique_id: int):
+        return self.objects.get(unique_id)
+    
+
+    def remove_object(self, unique_id: int):
+        if unique_id in self.objects:
+            del self.objects[unique_id]
+            
+
 
 # -----------------------------------------------------------------------------
 # Main with VLM object labeling
@@ -211,104 +234,123 @@ class ReIDDatabase:
 @hydra.main(config_path="conf", config_name="config", version_base=None)
 def main(cfg: DictConfig):
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    maskgen = prepare_sam(MODEL_CFG, CHECKPOINT_PATH, device)
-    embedder, preprocess = build_embedder(device)
+    maskgen = prepare_sam(cfg.segmentation)
     vlm = VLM(device)
 
-    reid_db = ReIDDatabase()
+    reid_db = ObjectDatabase()
+    
     prev_segs, id_to_color, id_to_label = {}, {}, {}
-
-    # cap = cv2.VideoCapture(VIDEO_SRC)
-    cv2.namedWindow("SAM2 + VLM", cv2.WINDOW_NORMAL)
 
 
     from red_loader import R3D_loader
     video_loader = R3D_loader(cfg.video)
 
+    rr.init("video_stream", spawn=True)  # spawn=True ⇒ open viewer
+    rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
 
     frames = []
-    cv2.resizeWindow("SAM2 + VLM", 1280, 720)
 
     decimate = 4
     couter = 0
 
     while True:
         frame, depth, pose, timestamp = video_loader.next_frame()
-        # rgb to bgr
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         if frame is None:
             print("No more frames to process.")
             break
+        # pixel indexed pcd has shape (h, w, 6) 3d points + 3d colors
+        pixel_indexed_pcd = video_loader.generate_pixel_indexed_pcd(frame, depth, pose)
+        if pixel_indexed_pcd is None:
+            continue
 
         couter += 1
         if couter % decimate != 0:
             continue
 
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        frame_var = float(np.var(cv2.Laplacian(gray, cv2.CV_64F)))
-        if frame_var < FRAME_BLUR_THRESH:
-            print("Frame is too blurry, skipping...")
-            # add text to the frame
-            cv2.putText(frame, "Frame is too blurry, skipping...", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-            frames.append(frame)
-            cv2.imshow("SAM2 + VLM", frame)
-            cv2.waitKey(1)
-            continue
-        # use bfloat 16 for SAM2
-        masks = maskgen.generate(frame_rgb)
-        disp=[]
-        for m in masks:
-                
-            mask_bin=(m['segmentation'].astype(np.uint8))*255
-            roi=dilate_mask(mask_bin, EDGE_OFFSET)
-            ys,xs=np.where(roi)
-            if len(xs)==0: continue
-            x0,x1,y0,y1=xs.min(),xs.max(),ys.min(),ys.max()
-            patch=frame[y0:y1+1,x0:x1+1]
-            emb=extract_embedding(embedder, preprocess, patch, device)
-            hist=compute_hsv_hist(frame,roi)
-            oid=reid_db.assign_id(emb,hist)
-            reid_db.update(oid,emb,hist)
-            if oid not in id_to_color:
-                id_to_color[oid]=tuple(map(int,np.random.randint(0,255,3)))
-            seg = prev_segs.get(oid, m['segmentation'])
-            seg=m['segmentation']; prev_segs[oid]=seg
-            center = mask_centroid(seg)
-            if center and oid not in id_to_label:
-                # compute a tight circle radius from this mask
-                radius = mask_radius(seg)
-                if radius < MAX_RADIUS and radius > MIN_RADIUS:
-                    id_to_label[oid] = vlm.ask(frame, center, radius)
-                else:
-                    id_to_label[oid] = "unknown"
-                    # remove the object from the database
-                    reid_db.update(oid, np.zeros_like(emb), np.zeros_like(hist))
+        rr.set_time("time", duration=timestamp)
+        rr.log("raw_video/frame", rr.Image(frame).compress(jpeg_quality=85))
 
-            disp.append({'segmentation':seg,'color':id_to_color[oid],'center':center,'id':oid})
-        vis=blend_masks(frame,disp,MASK_ALPHA)
-        # overlay ID and VLM label
-        for obj in disp:
-            c=obj['center']; oid=obj['id']
-            if c:
-                if id_to_label[oid]!="unknown":
-                    cv2.circle(vis,c,10,obj['color'],-1)
-                    txt=f"ID {oid}: {id_to_label.get(oid,'...')}"
-                    cv2.putText(vis,txt,(c[0]+5,c[1]-5),cv2.FONT_HERSHEY_SIMPLEX,1.0,obj['color'],1)
-        cv2.imshow("SAM2 + VLM",vis)
-        frames.append(vis)
-        if cv2.waitKey(1)&0xFF==ord('q'): break
-    cv2.destroyAllWindows()
-    # Save the frames as a video
-    if frames:
-        print("Saving frame_count:", len(frames))
-        h, w = frames[0].shape[:2]
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter('output.mp4', fourcc, 30.0, (w, h))
-        for frm in frames:
-            out.write(frm)
-        out.release()
-        print("Saved video to output.mp4")
+        # generate masks
+        masks = maskgen.generate(frame)
+
+        # seperate the pcd into segments of masks
+        pcd_segments = []
+        for mask in masks:
+            mask = mask['segmentation']
+            args = np.where(mask)
+            pcd_segment = pixel_indexed_pcd[args]
+            pcd_segments.append(pcd_segment)
+
+            
+
+        in_frame_ids = []
+        # for each segment, compute the centroid and radius
+        for i, pcd_segment in enumerate(pcd_segments):
+            filtered_pcd = remove_outliers_pcd(pcd_segment, threshold=0.005)
+            if len(filtered_pcd) <= 100 or len(filtered_pcd) >= 30000:
+                continue
+
+            points = filtered_pcd[:, :3]
+            colors = filtered_pcd[:, 3:]
+            # compute the centroid
+            centroid = points.mean(axis=0)
+            # filter the pointcloud with
+            # random color
+            colors[:,:] = np.random.rand(3)
+
+            # fit a bounding box to the pcd segment
+            pcd_o3d = o3d.geometry.PointCloud()
+            pcd_o3d.points = o3d.utility.Vector3dVector(points)
+            # Fit an oriented bounding box
+            obb = pcd_o3d.get_oriented_bounding_box()
+            # Log the OBB to Rerun
+            # Convert rotation matrix to quaternion (xyzw)
+            rotation_matrix = obb.R
+            quat_xyzw = Rotation.from_matrix(rotation_matrix).as_quat()
+
+            rr.log(f"world/pcd/segment_{i}/obb", rr.Boxes3D(
+                centers=obb.center,
+                half_sizes=obb.extent / 2.0,
+                rotations=quat_xyzw, # Pass quaternion here
+                colors=colors.mean(axis=0), # Use mean color of the segment
+                labels=f"ID: {i}"
+            ))
+
+            # voxelize the pcd segment
+            voxel_size = 0.02  # Define the size of a voxel
+            voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd_o3d, voxel_size=voxel_size)
+            # Get the voxel centers and colors
+            voxels = voxel_grid.get_voxels()
+            voxel_centers = np.array([voxel_grid.get_voxel_center_coordinate(voxel.grid_index) for voxel in voxels])
+            
+            # For simplicity, let's assign a uniform color or average color to voxels
+            # If you have per-voxel color, you can extract it similarly
+            voxel_colors = np.tile(colors.mean(axis=0), (len(voxel_centers), 1))
+
+            # if len(voxel_centers) > 0:
+            #     rr.log(f"world/pcd/segment_{i}/voxels", rr.Points3D(
+            #         positions=voxel_centers,
+            #         colors=voxel_colors,
+            #         radii=voxel_size / 2.0 # Approximate radius for visualization
+            #     ))
+
+            # add the segment to database
+            voxels_np = np.asarray(voxels)
+            obj_id = reid_db.add_object("unknown", voxels_np, centroid)
+            in_frame_ids.append(obj_id)
+
+            # add it to rerun
+            rr.log(f"world/pcd/centroid_{obj_id}", rr.Points3D(positions=centroid.reshape(1, 3), 
+                                                               colors=colors.mean(axis=0).reshape(1, 3), 
+                                                               radii=0.05, 
+                                                               labels=f"ID: {obj_id}",
+                                                               show_labels=True))
+            # add the pcd segment to rerun
+            rr.log(f"world/pcd/segment_{obj_id}", rr.Points3D(positions=points, colors=colors, radii=0.01))
+
+
+
+
 
 if __name__=="__main__":
     GlobalHydra.instance().clear(); main()

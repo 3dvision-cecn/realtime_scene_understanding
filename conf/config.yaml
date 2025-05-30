@@ -12,8 +12,8 @@ hand_detection_hamer:
   body_detector: "vitdet"
 
 segmentation:
-  model_cfg: checkpoints/sam/sam2.1_hiera_l.yaml
-  model_path: checkpoints/sam/sam2.1_hiera_large.pt
+  model_cfg: checkpoints/edgetam/edgetam.yaml
+  model_path: checkpoints/edgetam/edgetam.pt
   imgsz: 1280
   conf: 0.25
   iou: 0.7

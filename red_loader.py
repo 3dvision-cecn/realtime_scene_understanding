@@ -144,7 +144,6 @@ class R3D_loader:
 
     def generate_pcd(self, color, depth, cam2world_hom):
         # create an Open3D RGBD image
-        # create an Open3D RGBD image
         intr = o3d.camera.PinholeCameraIntrinsic(
             self.intrinsics_dict["w"], self.intrinsics_dict["h"],
             self.intrinsics_dict["fx"], self.intrinsics_dict["fy"],
@@ -176,6 +175,47 @@ class R3D_loader:
             cols = cols[idx]
 
         return pts, cols
+
+
+
+    def generate_pixel_indexed_pcd(self, color, depth, cam2world_hom):
+        # create an Open3D RGBD image
+        intr = o3d.camera.PinholeCameraIntrinsic(
+            self.intrinsics_dict["w"], self.intrinsics_dict["h"],
+            self.intrinsics_dict["fx"], self.intrinsics_dict["fy"],
+            self.intrinsics_dict["cx"], self.intrinsics_dict["cy"],
+        )
+        rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
+            o3d.geometry.Image(color),
+            o3d.geometry.Image(depth * 1000),  # convert depth to mm
+            convert_rgb_to_intensity=False,
+        )
+
+        # backproject to a point cloud and transform into world coords
+        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, intr)
+        flip_transform = [[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]]
+        pcd.transform(flip_transform)
+
+        # transform the point cloud into world coordinates
+        pcd.transform(cam2world_hom)
+        
+        # extract numpy arrays and log to rerun
+        pts = np.asarray(pcd.points)
+        cols = np.asarray(pcd.colors)
+
+        # create an array of pixel indices
+        h, w = color.shape[:2]
+        h_depth, w_depth = depth.shape[:2]
+
+        if len(pts) != h * w:
+            print(f"Warning: number of points {len(pts)} does not match number of pixels {h * w}.")
+            return None
+
+        pixel_indexed_pcd = np.zeros((h, w, 6), dtype=np.float32)
+        pixel_indexed_pcd[:, :, :3] = pts.reshape(h, w, 3)
+        pixel_indexed_pcd[:, :, 3:] = cols.reshape(h, w, 3)
+
+        return pixel_indexed_pcd
 
 
 

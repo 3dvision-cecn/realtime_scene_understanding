@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import time
 
 import cv2
 import numpy as np
@@ -7,13 +8,29 @@ import torch
 from PIL import Image
 from ultralytics import YOLO  # ➜  pip install -U ultralytics
 
-import clip
 from sam2.build_sam import build_sam2
-from sam2.sam2_image_predictor import SAM2ImagePredictor
+from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
+from transformers import AutoProcessor, AutoModelForVision2Seq
 
-from typing import List, Dict, Any
 from object import Object
-import uuid
+
+
+def mask_radius(mask: np.ndarray) -> int:
+    """
+    Compute the radius of the smallest circle centered at the mask centroid
+    that covers all mask pixels.
+    """
+    # find centroid
+    ys, xs = np.where(mask)
+    if len(xs) == 0:
+        return 0
+    cx, cy = xs.mean(), ys.mean()
+    # compute distances from centroid to every mask pixel
+    dists = np.sqrt((xs - cx)**2 + (ys - cy)**2) + 10
+    # round up to an integer radius
+    return int(np.ceil(dists.max()))
+
+
 
 
 class Segmentation:
@@ -39,183 +56,119 @@ class Segmentation:
         if self.vocab_path == "":
             self.vocab_path = None
 
+        # this is where we keep all of the detected objects
         self.objects = []
 
-        # ────────────── DEBUG OUTPUT ───────────────────
-        if cfg.debug_dir is not None:
-            self.debug_dir = Path(cfg.debug_dir)
-            self.debug_dir.mkdir(parents=True, exist_ok=True)
-        else:
-            self.debug_dir = None
-
-        # ────────────── YOLO detector ───────────────────────────────
-        weights = cfg.get("detector_weights", "yolo11l.pt")
-        self.det = YOLO(weights).to(self.device)
-        self.det_names = self.det.names
+        # cuda stuff
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
 
         # ────────────── SAM‑2 predictor (box prompt) ────────────────
-        sam_net = build_sam2(cfg.model_cfg, 'conf/' + cfg.model_path).to(self.device).eval()
-        self.sam = SAM2ImagePredictor(sam_net)
-        self.sam.mask_threshold = 0.0  # binarise manually
+        sam_net = build_sam2(cfg.model_cfg, 'conf/' + cfg.model_path, apply_postprocessing=False).to(self.device).eval()
+        self.sam = SAM2AutomaticMaskGenerator(
+                sam_net,
+                points_per_side=16,
+                pred_iou_thresh=0.9,
+                stability_score_thresh=0.9,
+                min_mask_region_area=250,
+                points_per_batch=256,
+            )
+        
+        # ────────────── vlM for zero-shot labels ────────────────
+        self.vlm = VLM(device=self.device) 
 
-        # ────────────── CLIP zero‑shot head ─────────────────────────
-        if self.zero_shot:
-            # load CLIP
-            self.clip_model, self.clip_preprocess = clip.load("ViT-L/14@336px", device=self.device)
-            self.clip_model.eval()
 
-            # build vocab
-            if self.vocab_path:
-                self.vocab = Path(self.vocab_path).read_text().splitlines()
-            else:
-                self.vocab = [
-                "hand",
-                "bottle",
-                "cup",
-                "desk",
-                "box",
-                "chair",
-                "couch",
-                "wooden table",
-                "table",
-                "sink",
-                "water glass",
-                "bag",
-                "spoon",
-                "fork",
-                "knife",
-                "plate",
-                "bowl",
-                "food",
-                "fridge",
-                "stove",
-                "pan",
-                "plastic cutting board",
-                "paper towel",
-                "plastic bag",
-                "plastic container",
-                "plastic wrap",
-                "plastic cup",
-                "plastic bottle",
-                "kettle",
-                "oven",
-                "microwave",
-                "toaster",
-                "dishwasher",
-                "cutting board",
-                "groceries",
-                "fruits",
-                "vegetable",
-                "bread",
-                "milk",
-                "trash bin",
-                "lid",
-                "paper towel",
-                "peeler",
-                "wine",
-                "juice",
-                "rice cooker",
-                "cleaning rag",
-                "towel",
-                "door",
-                "cabinet",
-                "spice"
-            ]
 
-            # prompts
-            SELF_PROMPTS = ["a close-up of a {}"]
-            # tokenize and embed text prompts
-            tokens = []
-            for prompt in SELF_PROMPTS:
-                texts = [prompt.format(v) for v in self.vocab]
-                tokens.append(clip.tokenize(texts).to(self.device))
-            with torch.no_grad():
-                emb = [self.clip_model.encode_text(t) for t in tokens]
-                # normalize and average embeddings across prompts
-                text_embs = [e / e.norm(dim=-1, keepdim=True) for e in emb]
-                self.text_emb = torch.stack(text_embs).mean(0)
-                self.text_emb /= self.text_emb.norm(dim=-1, keepdim=True)
 
     @torch.no_grad()
-    def segment(self, image: np.ndarray, timestamp_ms: int = 0, iteration: int = 0):
+    def segment(self, image: np.ndarray, pixel_indexed_pcd: np.ndarray,  timestamp_ms: int = 0, iteration: int = 0):
         """Returns (masks, annotated_img)."""
-        # YOLO detection
-        det_res = self.det(image, imgsz=self.imgsz, conf=self.conf,
-                           iou=self.iou, verbose=False)[0]
-        if len(det_res.boxes) == 0:
-            return [], image
+        # clear previous objects, we are doing it one-shot fashion
+        self.objects.clear()
 
-        boxes = det_res.boxes.xyxy.int().tolist()
-        cls_ids = det_res.boxes.cls.int().tolist()
-        confs = det_res.boxes.conf.tolist()
+        masks = self.sam.generate(image)
 
-        # SAM‑2 segmentation
-        self.sam.set_image(image)
+        pcd_segments = []
+        for mask in masks:
+            segm = mask['segmentation']
+            args = np.where(segm)
+            pcd_segment = pixel_indexed_pcd[args]
+            pcd_segments.append(pcd_segment)
+            # radius of a circle that covers the mask
+            radius = mask_radius(segm)
+            # center of the mask in the original image
+            bbox = mask['bbox']
+            center = (int(bbox[0] + bbox[2] / 2), int(bbox[1] + bbox[3] / 2))
+            # get the name of the object
+            name = self.vlm.ask(image, center, radius)
+            print(f"Object: {name}, Radius: {radius}, Center: {center}")
+            # calc the centroid of the pcd_segment
+            centroid = pcd_segment[:, :3].mean(axis=0)
 
-        # change to a object centric data structure
-        new_objects = []
-        for (x0, y0, x1, y1), cid, score in zip(boxes, cls_ids, confs):
-            m_np, _, _ = self.sam.predict(box=np.array([x0, y0, x1, y1]), multimask_output=False)
-            mask_bool = m_np[0].astype(bool)
-            object = Object(self.det_names[cid], uuid.uuid4())
-            object.mask = mask_bool
-            object.bbox = (x0, y0, x1, y1)
-            object.timestamp = timestamp_ms
-            new_objects.append(object)
-            print(f" Addded a new object {object}")
+            obj = Object(name, centroid, bbox, segm, pcd=pcd_segment)
+            self.objects.append(obj)
 
-        # track the objects with sift
-
-
-        self.last_frame = image.copy()
-        # annotated = self._draw_masks_on_image(image.copy(), masks)
-        return self.objects, image
-
-
-    def _clip_label_custom(self, img: np.ndarray, masks: List[Dict[str, Any]]):
-        filtered = []
-        for m in masks:
-            seg = m["segmentation"]
-            ys, xs = np.where(seg)
-            if ys.size == 0:
-                continue
-            # bounding box crop with padding
-            offset = 10
-            y0, y1 = max(ys.min() - offset, 0), min(ys.max() + offset, img.shape[0])
-            x0, x1 = max(xs.min() - offset, 0), min(xs.max() + offset, img.shape[1])
-            crop = img[y0:y1, x0:x1].copy()
-            pil = Image.fromarray(crop)
-            inp = self.clip_preprocess(pil).unsqueeze(0).to(self.device)
-            with torch.no_grad():
-                img_emb = self.clip_model.encode_image(inp)
-                img_emb /= img_emb.norm(dim=-1, keepdim=True)
-                logits = 100.0 * img_emb @ self.text_emb.T
-                probs = logits.softmax(dim=-1)[0]
-            best_idx = int(probs.argmax())
-            best_prob = float(probs[best_idx])
-            best_label = self.vocab[best_idx] if best_prob >= 0.5 else "unknown"
-            if best_label == "hand":
-                best_label = "unknown"
-            m["label"] = best_label
-            m["prob"] = best_prob
-            if best_label != "unknown":
-                filtered.append(m)
-        return filtered
-
-    @staticmethod
-    def _draw_masks_on_image(im: np.ndarray, masks: List[Dict[str, Any]]):
-        overlay = im.copy()
-        for m in masks:
-            seg = m["segmentation"].astype(np.uint8)
-            colour = tuple(int(c) for c in np.random.randint(0, 255, 3))
-            contours, _ = cv2.findContours(seg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            cv2.drawContours(overlay, contours, -1, colour, cv2.FILLED)
-            ys, xs = np.where(seg)
-            if ys.size:
-                cx, cy = int(xs.mean()), int(ys.mean())
-                cv2.putText(overlay, f"{m['label']} {m['prob']*100:.0f}%", (cx, cy),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-        cv2.addWeighted(overlay, 0.5, im, 0.5, 0, dst=im)
-        return im
+        # create an annotated image
+        annotated_img = image.copy()
+        for obj in self.objects:
+            x, y, w, h = map(int, obj.bbox)
+            cv2.rectangle(annotated_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cv2.putText(annotated_img, obj.name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        return self.objects, annotated_img
 
 
+
+class VLM:
+    def __init__(self, device: str = 'cpu'):
+        self.device = device
+        self.processor = AutoProcessor.from_pretrained('HuggingFaceTB/SmolVLM-Instruct')
+        self.model = AutoModelForVision2Seq.from_pretrained(
+            'HuggingFaceTB/SmolVLM-Instruct', torch_dtype=torch.bfloat16
+        ).to(self.device)
+
+    def ask(self, frame: np.ndarray, center: tuple[int,int], radius: int = 64) -> str:
+        x, y = center
+        # draw a red circle on the image
+        # draw a red circle on a copy of the frame
+        circ = frame.copy()
+        # conver rgb to bgr
+        circ = cv2.cvtColor(circ, cv2.COLOR_RGB2BGR)
+        cv2.circle(circ, (x, y), radius, (0, 0, 255), 2)
+        # crop the image to the circle
+        offset = int(radius + 0)
+        x0, y0 = max(x - offset, 0), max(y - offset, 0)
+        x1, y1 = min(x + offset, frame.shape[1]), min(y + offset, frame.shape[0])
+        circ = circ[y0:y1, x0:x1]
+        # uf cropping the image, the circle is not centered return unknown
+        if circ.shape[0] != circ.shape[1]:
+            # cv2.putText(circ, "unknown", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            # cv2.imshow("Circle", circ)
+            # cv2.waitKey(100)
+            return "unknown"
+        # show the image with the circle
+        messages = [
+            {
+            "role": "user",
+            "content": [
+                {"type": "image"},
+                {"type": "text", "text": "What is the object in the middle of the red circle, in maximum two words !"},
+            ]
+            },
+        ]
+        # convert the image to RGB
+        circ = cv2.cvtColor(circ, cv2.COLOR_BGR2RGB)
+        prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True)
+        inputs = self.processor(text=prompt, images=[circ], return_tensors="pt").to(self.device)
+        # bfloat16 is needed for the model to run on GPU
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            generated_ids = self.model.generate(**inputs, max_new_tokens=20)
+        generated_texts = self.processor.batch_decode(
+            generated_ids,
+            skip_special_tokens=True,
+        )
+        asssitant = generated_texts[0].split("Assistant:")[-1]
+        # for debugging, show the circle with the text
+        # cv2.putText(circ, asssitant.strip(), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        # cv2.imshow("Circle", circ)
+        # cv2.waitKey(0)
+        return asssitant.strip()

@@ -13,6 +13,7 @@ from hand_detection_hamer import HandDetection
 from segmentation import Segmentation
 from graph_generator import GraphGenerator
 from red_loader import R3D_loader
+from scipy.spatial.transform import Rotation
 
 # ──────────── CONFIGURE SEGMENT OUTPUT ────────────
 
@@ -56,7 +57,9 @@ def main(cfg: DictConfig):
         frame_rgb, depth, pose, timestamp = video_loader.next_frame()
 
         pixel_indexed_pcd = video_loader.generate_pixel_indexed_pcd(frame_rgb, depth, pose)
-
+        if pixel_indexed_pcd is None:
+            print("No pixel indexed point cloud available, skipping frame.")
+            continue
 
         # only process at target FPS
         if timestamp - last_process_ts < target_interval:
@@ -74,17 +77,25 @@ def main(cfg: DictConfig):
         rr.log("raw_video/frame", rr.Image(img).compress(jpeg_quality=85))
 
         # Hand detection
+        t0 = time.time()
         hand_data, hd_img = hand_detection.detect_hands(
-            img, timestamp_ms=int(timestamp * 1000)
+            img, pixel_indexed_pcd, timestamp_ms=int(timestamp * 1000)
         )
+        t1 = time.time()
+        print(f"Hand detection took {t1 - t0:.3f} seconds")
         rr.log("hand_detection/annotated_image", rr.Image(hd_img))
+        
+
 
         t0 = time.perf_counter()
 
         # Segmentation
+        t0 = time.time()
         objects, seg_img = segmentation.segment(
-            img, pixel_indexed_pcd, timestamp_ms=int(timestamp * 1000), iteration=itr
+            img, pixel_indexed_pcd, hand_data, timestamp_ms=int(timestamp * 1000), iteration=itr
         )
+        t1 = time.time()
+        print(f"Segmentation took {t1 - t0:.3f} seconds")
 
         t1 = time.perf_counter()
 
@@ -98,8 +109,56 @@ def main(cfg: DictConfig):
 
         # point cloud
         rr.log("depth_map", rr.Image(depth))
-        points, colors = video_loader.generate_pcd(hd_img, depth, pose)
+        points, colors = video_loader.generate_pcd(img, depth, pose)
         rr.log("world/point_cloud", rr.Points3D(points, colors=colors))
+
+        # log objects
+        labels = []
+        centroids = []
+        rotations = []
+        centers = []
+        half_sizes = []
+        for obj in objects:
+            labels.append(obj.name)
+            centroids.append(obj.position)
+            rot_mat = obj.obb.R
+            quat_xyzw = Rotation.from_matrix(rot_mat).as_quat()
+            rotations.append(quat_xyzw)
+            centers.append(obj.obb.center)
+            half_sizes.append(obj.obb.extent / 2.0)
+
+        rr.log(
+            "world/objects",
+            rr.Boxes3D(
+                centers=np.array(centers),
+                half_sizes=np.array(half_sizes),
+                rotations=np.array(rotations),
+                labels=labels,
+            )
+        )
+
+        # log hand keypoints
+        # as 3d points
+        if hand_data is not None:
+            left_hand = hand_data.left_hand
+            rr.log(
+                "world/left_hand_keypoints",
+                rr.Points3D(
+                    left_hand.keypoints_pcd,
+                    colors=np.array([[255, 0, 0]] * len(left_hand.keypoints_pcd)),
+                    radii=0.01,
+                ),
+            )
+            right_hand = hand_data.right_hand
+            rr.log(
+                "world/right_hand_keypoints",
+                rr.Points3D(
+                    right_hand.keypoints_pcd,
+                    colors=np.array([[0, 0, 255]] * len(right_hand.keypoints_pcd)),
+                    radii=0.01,
+                ),
+            )
+
 
         # # Graph generation
         # if hand_data is not None:

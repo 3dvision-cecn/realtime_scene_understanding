@@ -16,6 +16,12 @@ from vitpose_model import ViTPoseModel
 from detectron2.config import LazyConfig
 from hamer.utils.utils_detectron2 import DefaultPredictor_Lazy
 LIGHT_BLUE=(0.65098039,  0.74117647,  0.85882353)
+GREEN=(0.0, 1.0, 0.0)
+import time
+import numpy as np
+from sklearn.cluster import KMeans
+
+from object import Hand, BothHands
 
 class HandDetection:
 
@@ -34,7 +40,6 @@ class HandDetection:
                 detectron2_cfg.model.roi_heads.box_predictors[i].test_score_thresh = 0.25
             self.detector = DefaultPredictor_Lazy(detectron2_cfg)
         elif cfg.body_detector == 'regnety':
-
             detectron2_cfg = model_zoo.get_config('new_baselines/mask_rcnn_regnety_4gf_dds_FPN_400ep_LSJ.py', trained=True)
             detectron2_cfg.model.roi_heads.box_predictor.test_score_thresh = 0.5
             detectron2_cfg.model.roi_heads.box_predictor.test_nms_thresh   = 0.4
@@ -44,25 +49,34 @@ class HandDetection:
         self.renderer = Renderer(self.model_cfg, faces=self.model.mano.faces)
 
 
-    def detect_hands(self, image, timestamp_ms: int = 0):
+    def detect_hands(self, image, pixel_indexed_pcd,timestamp_ms: int = 0):
         """
         Input:
             image rgb: np.ndarray, shape (H, W, 3), dtype=uint8
         Output:
 
         """
-        det_out = self.detector(image)
+        t0 = time.time()
+        # run inference with bf16
+        with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+            det_out = self.detector(image)
+        t1 = time.time()
+        print(f"Body detection took {t1 - t0:.3f} seconds")
         det_instances = det_out['instances']
         valid_idx = (det_instances.pred_classes==0) & (det_instances.scores > 0.5)
         pred_bboxes=det_instances.pred_boxes.tensor[valid_idx].cpu().numpy()
         pred_scores=det_instances.scores[valid_idx].cpu().numpy()
+        t0 = time.time()
         vitposes_out = self.cpm.predict_pose(
             image,
             [np.concatenate([pred_bboxes, pred_scores[:, None]], axis=1)],
         )
+        t1 = time.time()
+        print(f"ViTPose took {t1 - t0:.3f} seconds")
 
         bboxes = []
         is_right = []
+        keypoints = []
 
         # Use hands based on hand keypoint detections
         for vitposes in vitposes_out:
@@ -71,103 +85,105 @@ class HandDetection:
 
             # Rejecting not confident detections
             keyp = left_hand_keyp
-            valid = keyp[:,2] > 0.6
+
+            valid = keyp[:,2] > 0.4
             if sum(valid) > 3:
                 bbox = [keyp[valid,0].min(), keyp[valid,1].min(), keyp[valid,0].max(), keyp[valid,1].max()]
-                found_left = False
-                for x in is_right:
-                    if x == 0:
-                        found_left = True
-                if not found_left:
-                    bboxes.append(bbox)
-                    is_right.append(0)
+                keypoints.append(keyp[valid])
+                bboxes.append(bbox)
+                is_right.append(0)
+
             keyp = right_hand_keyp
-            valid = keyp[:,2] > 0.6
+            valid = keyp[:,2] > 0.4
             if sum(valid) > 3:
                 bbox = [keyp[valid,0].min(), keyp[valid,1].min(), keyp[valid,0].max(), keyp[valid,1].max()]
-                found_right = False
-                for x in is_right:
-                    if x == 1:
-                        found_right = True
-                if not found_right:
-                    bboxes.append(bbox)
-                    is_right.append(1)
+                keypoints.append(keyp[valid])
+                bboxes.append(bbox)
+                is_right.append(1)
 
-            
+        # create for each keypoint a new instance [x, y, is_right]
+        points = []
+        for i in range(len(keypoints)):
+            for j in range(len(keypoints[i])):
+                points.append([keypoints[i][j][0], keypoints[i][j][1], is_right[i]])
+
+        # cluster all keypoints into two clusters: and check the majority class
+        # Convert points list to numpy array: columns are [x, y, is_right]
+        points_arr = np.array(points)
+        if len(points_arr) < 2:
+            print("Not enough points for clustering.")
+            return None, image
+        else:
+            # Cluster based on the x,y coordinates
+            kmeans = KMeans(n_clusters=2, random_state=0).fit(points_arr[:, :2])
+            labels = kmeans.labels_
+
+            # Determine the majority class for each cluster based on the is_right flag
+            majority_classes = {}
+            for cluster in range(2):
+                cluster_indices = np.where(labels == cluster)[0]
+                if cluster_indices.size:
+                    # Count the number of right (1) and left (0) labels
+                    rights = points_arr[cluster_indices, 2].astype(int)
+                    counts = np.bincount(rights, minlength=2)
+                    majority = int(np.argmax(counts))
+                    majority_classes[cluster] = majority
+                else:
+                    majority_classes[cluster] = None
+
+            # Generate new filtered keypoints: only keep keypoints that match the cluster’s majority classification.
+            filtered_points = []
+            for i, point in enumerate(points_arr):
+                cluster = labels[i]
+                if majority_classes[cluster] is not None and majority_classes[cluster] == int(point[2]):
+                    filtered_points.append(point)
+            filtered_points = np.array(filtered_points) if filtered_points else np.empty((0, 3))
 
 
+        left_hand_keypoints = [ point for point in filtered_points if point[2] == 0 ]
+        right_hand_keypoints = [ point for point in filtered_points if point[2] == 1 ]
 
-        if len(bboxes) != 0:
-            boxes = np.stack(bboxes)
-            right = np.stack(is_right)
 
-            dataset = ViTDetDataset(self.model_cfg, image, boxes, right, rescale_factor=2.0)
-            dataloader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=False, num_workers=0)
+        # sample the pixels in 2 pixel neighborhood around each keypoint and get the corresponding mean position
+        def sample_neighborhood(keypoint, pixel_indexed_pcd, neighborhood_size=2):
+            x, y, _ = keypoint
+            x, y = int(x), int(y)
+            neighborhood = pixel_indexed_pcd[y-neighborhood_size:y+neighborhood_size+1, x-neighborhood_size:x+neighborhood_size+1, :3]
+            # get the mean position of the neighborhood
+            # flaten the neighborhood to 2D array
+            neighborhood_flat = neighborhood.reshape(-1, 3)
+            # mean position, 
+            mean_pos = np.mean(neighborhood_flat, axis=0)
+            return mean_pos
 
-            all_cam_t = []
-            all_verts = []
-            all_right = []
+        left_hand_keypoints_pos = np.array([sample_neighborhood(kp, pixel_indexed_pcd) for kp in left_hand_keypoints])
+        right_hand_keypoints_pos = np.array([sample_neighborhood(kp, pixel_indexed_pcd) for kp in right_hand_keypoints])
 
-            for batch in dataloader:
-                batch = recursive_to(batch, self.device)
-                with torch.no_grad():
-                    out = self.model(batch)
+        # Create Hand objects
+        left_hand = Hand(
+            keypoints_image=left_hand_keypoints,
+            keypoints_pcd=left_hand_keypoints_pos,
+            mean_pos=np.mean(left_hand_keypoints_pos, axis=0)
+        )
 
-                multiplier = (2*batch['right']-1)
-                pred_cam = out['pred_cam']
-                pred_cam[:,1] = multiplier*pred_cam[:,1]
-                box_center = batch["box_center"].float()
-                box_size = batch["box_size"].float()
-                img_size = batch["img_size"].float()
-                multiplier = (2*batch['right']-1)
-                scaled_focal_length = self.model_cfg.EXTRA.FOCAL_LENGTH / self.model_cfg.MODEL.IMAGE_SIZE * img_size.max()
-                pred_cam_t_full = cam_crop_to_full(pred_cam, box_center, box_size, img_size, scaled_focal_length).detach().cpu().numpy()
+        right_hand = Hand(
+            keypoints_image=right_hand_keypoints,
+            keypoints_pcd=right_hand_keypoints_pos,
+            mean_pos=np.mean(right_hand_keypoints_pos, axis=0)
+        )
+        # Create BothHands object
+        both_hands = BothHands(left_hand=left_hand, right_hand=right_hand)
 
-                batch_size = batch['img'].shape[0]
-                for n in range(batch_size):
-                    # Add all verts and cams to list
-                    verts = out['pred_vertices'][n].detach().cpu().numpy()
-                    is_right = batch['right'][n].cpu().numpy()
-                    verts[:,0] = (2*is_right-1)*verts[:,0]
-                    cam_t = pred_cam_t_full[n]
-                    all_verts.append(verts)
-                    all_cam_t.append(cam_t)
-                    all_right.append(is_right)
+        # visualize the keypoints on the image
+        image = image.copy()
+        for point in filtered_points:
+            x, y, is_right = point
+            if is_right == 1:
+                cv2.circle(image, (int(x), int(y)), 5, (0, 255, 0), -1)
+            else:
+                cv2.circle(image, (int(x), int(y)), 5, (255, 0, 0), -1)
 
-            misc_args = dict(
-                mesh_base_color=LIGHT_BLUE,
-                scene_bg_color=(1, 1, 1),
-                focal_length=scaled_focal_length,
-            )
-            
-            cam_view = self.renderer.render_rgba_multiple(all_verts, cam_t=all_cam_t, render_res=img_size[n], is_right=all_right, **misc_args)
+        # sample the pixels in 2 pixel neightborhood around each keypoint and get the corresponding mean pos
 
-            # overlaty cam_view[:,:,:3] on image
-            # cam_view: HxWx4 RGBA float image in [0,1]
-            # Convert to 0–255 uint8
-            overlay = (cam_view * 255).astype(np.uint8)
-            # Split channels
-            rgb, alpha = overlay[:, :, :3], overlay[:, :, 3] / 255.0
-
-            # Prepare output
-            annotated_image = image.copy().astype(np.float32)
-
-            # Broadcast alpha to 3 channels
-            alpha_3 = np.stack([alpha]*3, axis=-1)
-
-            # Composite
-            annotated_image = (rgb.astype(np.float32) * alpha_3 +
-                               annotated_image * (1 - alpha_3))
-            annotated_image = annotated_image.astype(np.uint8)
-
-            hand_data = {
-                "verts": all_verts,         # list of (778, 3) np.ndarrays
-                "cam_t": all_cam_t,         # list of (3,) np.ndarrays
-                "is_right": all_right,       # list of bools or ints
-                "box_centers": [bc.cpu().numpy().tolist() for bc in box_center],  # ADD THIS
-            }
-            
-            return hand_data, annotated_image
-
-        return None, image
+        return both_hands, image
 

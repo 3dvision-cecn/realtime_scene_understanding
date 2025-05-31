@@ -23,6 +23,10 @@ from scipy.spatial.transform import Rotation
 import rerun as rr
 import time
 import open3d as o3d
+import torch
+
+from promptda.promptda import PromptDA
+
 
 def load_depth(filepath, desired_width=960, desired_height=720):
     with open(filepath, 'rb') as depth_fh:
@@ -121,6 +125,9 @@ class R3D_loader:
 
         self.poses = get_poses(metadata)
 
+        self.promptda = PromptDA(encoder = "vits", ckpt_path = "conf/checkpoints/promptda/model(1).ckpt").to("cuda").eval()
+
+
 
     def get_intrinsics(self):
         return self.intrinsics_dict
@@ -134,12 +141,47 @@ class R3D_loader:
         color = load_color(self.color_paths[self.frame_idx])
         depth = load_depth(self.depth_paths[self.frame_idx])
 
+        # neural_depth = self.neural_depth(color, depth)
+
+
         # pose
         pose = self.poses[self.frame_idx]
 
         self.frame_idx += 1
 
         return color, depth, pose, self.frame_idx / 30.0  # assuming 30 fps
+    
+
+    def neural_depth(self, color, depth):
+        # max_size // 14 = 0
+        # ensure color and depth max size is multiple of 14
+        h, w = color.shape[:2]
+        new_h = h - (h % 14)
+        new_w = w - (w % 14)
+        color = color[:new_h, :new_w]
+        depth = depth[:new_h, :new_w]
+
+        print(f"mean depth: {np.mean(depth)}, min depth: {np.min(depth)}, max depth: {np.max(depth)}")
+
+        # neural depth prediction
+        color = cv2.cvtColor(color, cv2.COLOR_RGB2BGR)  # convert to BGR for OpenCV
+        color_t = torch.tensor(color).permute(2, 0, 1).unsqueeze(0).float() / 255.0
+        color_t = color_t.to("cuda")
+        depth_t = torch.tensor(depth).unsqueeze(0).unsqueeze(0).float()
+        depth_t = depth_t.to("cuda")
+        print(f"Color shape: {color_t.shape}, Depth shape: {depth_t.shape}")
+        depth_neural = self.promptda.predict(color_t, depth_t)
+        print(f"Depth neural shape: {depth_neural.shape}")
+
+        print(f"mean neural depth: {torch.mean(depth_neural)}, min neural depth: {torch.min(depth_neural)}, max neural depth: {torch.max(depth_neural)}")
+
+        # convert to numpy and squeeze
+        depth_neural = depth_neural.squeeze().cpu().numpy()
+        # resize to original size
+        depth_neural = cv2.resize(depth_neural, (w, h), interpolation=cv2.INTER_LINEAR)
+
+        return depth_neural
+
 
 
     def generate_pcd(self, color, depth, cam2world_hom):
@@ -169,7 +211,7 @@ class R3D_loader:
         cols = np.asarray(pcd.colors)
 
         # select only 1000 points for logging
-        if len(pts) > 1000:
+        if len(pts) > 50000:
             idx = np.random.choice(len(pts), 50000, replace=False)
             pts = pts[idx]
             cols = cols[idx]
@@ -223,10 +265,10 @@ if __name__ == "__main__":
     
     @dataclass
     class Config:
-        datapath: str  # path to the unzipped .r3d folder
+        path: str  # path to the unzipped .r3d folder
 
     # Example usage
-    conf = Config(datapath="/home/eongan/dropbox/recordings/efe_kitchen_tea/2025-05-04--19-55-15")
+    conf = Config(path="/home/eongan/dropbox/recordings/efe_kitchen_tea/2025-05-04--19-55-15")
     loader = R3D_loader(conf)
     rr.init("3d_vision_demo", spawn=True)
     rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
@@ -270,10 +312,10 @@ if __name__ == "__main__":
         cols = np.asarray(pcd.colors)
 
         # select only 1000 points for logging
-        if len(pts) > 1000:
-            idx = np.random.choice(len(pts), 1000, replace=False)
-            pts = pts[idx]
-            cols = cols[idx]
+        # if len(pts) > 1000:
+        #     idx = np.random.choice(len(pts), 1000, replace=False)
+        #     pts = pts[idx]
+        #     cols = cols[idx]
 
         rr.log("world/point_cloud", rr.Points3D(pts, colors=cols))
 

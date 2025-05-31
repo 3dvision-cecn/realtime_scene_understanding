@@ -11,6 +11,7 @@ from ultralytics import YOLO  # ➜  pip install -U ultralytics
 from sam2.build_sam import build_sam2
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 from transformers import AutoProcessor, AutoModelForVision2Seq
+import open3d as o3d
 
 from object import Object
 
@@ -31,6 +32,20 @@ def mask_radius(mask: np.ndarray) -> int:
     return int(np.ceil(dists.max()))
 
 
+def remove_outliers_statistical(pcd: np.ndarray,
+                                nb_neighbors: int = 20,
+                                std_ratio: float = 2.0) -> np.ndarray:
+    """Statistical outlier removal (fast C++ backend)."""
+    pcd_o3d = o3d.geometry.PointCloud()
+    pcd_o3d.points  = o3d.utility.Vector3dVector(pcd[:, :3])
+    pcd_o3d.colors  = o3d.utility.Vector3dVector(pcd[:, 3:6])
+
+    clean_cloud, _ = pcd_o3d.remove_statistical_outlier(
+        nb_neighbors=nb_neighbors,
+        std_ratio=std_ratio
+    )
+    return np.hstack((np.asarray(clean_cloud.points),
+                      np.asarray(clean_cloud.colors)))
 
 
 class Segmentation:
@@ -64,16 +79,20 @@ class Segmentation:
         torch.backends.cudnn.allow_tf32 = True
 
         # ────────────── SAM‑2 predictor (box prompt) ────────────────
-        sam_net = build_sam2(cfg.model_cfg, 'conf/' + cfg.model_path, apply_postprocessing=False).to(self.device).eval()
-        self.sam = SAM2AutomaticMaskGenerator(
-                sam_net,
-                points_per_side=16,
-                pred_iou_thresh=0.9,
-                stability_score_thresh=0.9,
-                min_mask_region_area=250,
-                points_per_batch=256,
-            )
+        self.sam_net = build_sam2(cfg.model_cfg, 'conf/' + cfg.model_path, apply_postprocessing=False).to(self.device).eval()
+        # self.sam = SAM2AutomaticMaskGenerator(
+        #         self.sam_net,
+        #         points_per_side=32,
+        #         pred_iou_thresh=0.9,
+        #         stability_score_thresh=0.9,
+        #         min_mask_region_area=250,
+        #         points_per_batch=256,
+        #     )
         
+        self.yolo = YOLO("yolo12x.pt")  
+
+
+
         # ────────────── vlM for zero-shot labels ────────────────
         self.vlm = VLM(device=self.device) 
 
@@ -81,13 +100,68 @@ class Segmentation:
 
 
     @torch.no_grad()
-    def segment(self, image: np.ndarray, pixel_indexed_pcd: np.ndarray,  timestamp_ms: int = 0, iteration: int = 0):
+    def segment(self, image: np.ndarray, pixel_indexed_pcd: np.ndarray, hand_data, timestamp_ms: int = 0, iteration: int = 0):
         """Returns (masks, annotated_img)."""
         # clear previous objects, we are doing it one-shot fashion
         self.objects.clear()
 
-        masks = self.sam.generate(image)
 
+        # run yolo with ver low confidence to get all of the boxes and show the boxes with opencv
+        image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        yolo_results = self.yolo(image_bgr, conf=self.conf, iou=self.iou, imgsz=self.imgsz)
+
+        points = []
+        for result in yolo_results:
+            if result.boxes is not None:
+                for box in result.boxes:
+                    # box.xyxy is a tensor with [x1, y1, x2, y2]
+                    x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                    cv2.rectangle(image_bgr, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                    # add the center of the box to points
+                    center_x = (x1 + x2) // 2
+                    center_y = (y1 + y2) // 2
+                    # normalize the center to the range [0, 1]
+                    center_x = center_x / image.shape[1]
+                    center_y = center_y / image.shape[0]
+                    points.append((center_x, center_y))
+
+        # convert to numpy array
+        points = np.array(points, dtype=np.float32)
+        print(f"Number of points for SAM-2: {len(points)}")
+        sam2_points = []
+        sam2_points.append(points)
+
+        # give the list of points to the SAM-2 predictor
+        t0 = time.time()
+        self.sam = SAM2AutomaticMaskGenerator(
+                self.sam_net,
+                points_per_side=None,
+                point_grids = sam2_points,
+                pred_iou_thresh=0.5,
+                stability_score_thresh=0.9,
+                box_nms_thresh=0.3,
+                min_mask_region_area=300,
+                points_per_batch=256,
+                use_m2m=False,
+            )
+        masks = self.sam.generate(image)
+        t1 = time.time()
+        print(f"Time taken for SAM-2 segmentation: {t1 - t0:.2f} seconds")
+
+        # # visualize the masks on the image
+        annotated_img = image.copy()
+        for mask in masks:
+            segm = mask['segmentation']
+            # generate a random color for the mask overlay
+            color = np.random.randint(0, 255, 3).tolist()
+            # create an overlay image
+            overlay = annotated_img.copy()
+            overlay[segm.astype(bool)] = color
+            # blend the overlay with the original image
+            annotated_img = cv2.addWeighted(overlay, 0.5, annotated_img, 0.5, 0)
+
+
+        t0 = time.time()
         pcd_segments = []
         for mask in masks:
             segm = mask['segmentation']
@@ -96,24 +170,78 @@ class Segmentation:
             pcd_segments.append(pcd_segment)
             # radius of a circle that covers the mask
             radius = mask_radius(segm)
+
+            # skip small masks
+            if radius < 30:
+                # skip small masks
+                continue
+            # skip very large masks like the background
+            if len(pcd_segment) > 200 * 200:
+                continue
+
+            # skip masks that contain any hand keypoints
+            if hand_data is not None:                    
+                left_hand_keypoints = hand_data.left_hand.keypoints_image
+                right_hand_keypoints = hand_data.right_hand.keypoints_image
+
+                keypoints = []
+                # add all keypoints to the list
+                if len(left_hand_keypoints) > 0:
+                    keypoints.append(left_hand_keypoints)
+                if len(right_hand_keypoints) > 0:
+                    keypoints.append(right_hand_keypoints)
+
+                # concatenate the keypoints
+                keypoints = np.concatenate(keypoints, axis=0)
+                # round the keypoints to the nearest integer
+                # but smaller than the image size
+                keypoints = np.round(keypoints).astype(int)
+                keypoints[:, 0] = np.clip(keypoints[:, 0], 0, image.shape[1] - 1)
+                keypoints[:, 1] = np.clip(keypoints[:, 1], 0, image.shape[0] - 1)
+                # check if any keypoint is inside the mask
+                num_collisions = 0
+                for keypoint in keypoints:
+                    if segm[keypoint[1], keypoint[0]]:
+                        num_collisions += 1
+                if num_collisions > 8:
+                    continue
+
             # center of the mask in the original image
             bbox = mask['bbox']
             center = (int(bbox[0] + bbox[2] / 2), int(bbox[1] + bbox[3] / 2))
             # get the name of the object
-            name = self.vlm.ask(image, center, radius)
-            print(f"Object: {name}, Radius: {radius}, Center: {center}")
+            # name = self.vlm.ask(image, center, radius)
+            name = "unknown"
+            # print(f"Object: {name}, Radius: {radius}, Center: {center}")
             # calc the centroid of the pcd_segment
-            centroid = pcd_segment[:, :3].mean(axis=0)
 
-            obj = Object(name, centroid, bbox, segm, pcd=pcd_segment)
+            # remove outliers from the point cloud segment
+            pcd_segment = remove_outliers_statistical(pcd_segment, 
+                                                      nb_neighbors=20,
+                                                      std_ratio=2.0)
+            centroid = pcd_segment[:, :3].mean(axis=0)
+            # fit a bounding box to the point cloud segment
+            if pcd_segment.shape[0] == 0:
+                print(f"Skipping empty point cloud segment for object: {name}")
+                continue
+            # create a bounding box from the point cloud segment
+            pcd_o3d = o3d.geometry.PointCloud()
+            pcd_o3d.points = o3d.utility.Vector3dVector(pcd_segment[:, :3])
+
+            obb = pcd_o3d.get_oriented_bounding_box()
+
+            obj = Object(name, centroid, bbox, segm, pcd=pcd_segment, obb=obb)
             self.objects.append(obj)
 
+        t1 = time.time()
+        print(f"Time taken for PCD and VLM processing: {t1 - t0:.2f} seconds")
+
         # create an annotated image
-        annotated_img = image.copy()
         for obj in self.objects:
             x, y, w, h = map(int, obj.bbox)
             cv2.rectangle(annotated_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
             cv2.putText(annotated_img, obj.name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
         return self.objects, annotated_img
 
 
@@ -135,7 +263,7 @@ class VLM:
         circ = cv2.cvtColor(circ, cv2.COLOR_RGB2BGR)
         cv2.circle(circ, (x, y), radius, (0, 0, 255), 2)
         # crop the image to the circle
-        offset = int(radius + 0)
+        offset = int(radius + 10)
         x0, y0 = max(x - offset, 0), max(y - offset, 0)
         x1, y1 = min(x + offset, frame.shape[1]), min(y + offset, frame.shape[0])
         circ = circ[y0:y1, x0:x1]

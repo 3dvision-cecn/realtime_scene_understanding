@@ -15,8 +15,8 @@ segmentation:
   model_cfg: checkpoints/edgetam/edgetam.yaml
   model_path: checkpoints/edgetam/edgetam.pt
   imgsz: 1280
-  conf: 0.25
-  iou: 0.7
+  conf: 0.005
+  iou: 0.5
   zero_shot: True
   debug_dir: 
   vocab_path: 

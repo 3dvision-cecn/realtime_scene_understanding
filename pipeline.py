@@ -54,6 +54,7 @@ def main(cfg: DictConfig):
     # processing loop
     while True:
         itr+=1
+        start_time = time.perf_counter()
         frame_rgb, depth, pose, timestamp = video_loader.next_frame()
 
         pixel_indexed_pcd = video_loader.generate_pixel_indexed_pcd(frame_rgb, depth, pose)
@@ -160,11 +161,15 @@ def main(cfg: DictConfig):
             )
 
 
+
         # # Graph generation
         # if hand_data is not None:
         #  graph, graph_img = graph_generator.generate_graph(img, masks, hand_data)
         #  rr.log("graph_image", rr.Image(graph_img))
 
+        end_time = time.perf_counter()
+        print(f"Processing time for frame {itr}: {end_time - start_time:.3f} seconds")
+        # Log the processing time
 
 if __name__ == "__main__":
     GlobalHydra.instance().clear()

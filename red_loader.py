@@ -25,7 +25,7 @@ import time
 import open3d as o3d
 import torch
 
-from promptda.promptda import PromptDA
+# from promptda.promptda import PromptDA
 
 
 def load_depth(filepath, desired_width=960, desired_height=720):
@@ -125,7 +125,7 @@ class R3D_loader:
 
         self.poses = get_poses(metadata)
 
-        self.promptda = PromptDA(encoder = "vits", ckpt_path = "conf/checkpoints/promptda/model(1).ckpt").to("cuda").eval()
+        # self.promptda = PromptDA(encoder = "vits", ckpt_path = "conf/checkpoints/promptda/model(1).ckpt").to("cuda").eval()
 
 
 
@@ -152,35 +152,35 @@ class R3D_loader:
         return color, depth, pose, self.frame_idx / 30.0  # assuming 30 fps
     
 
-    def neural_depth(self, color, depth):
-        # max_size // 14 = 0
-        # ensure color and depth max size is multiple of 14
-        h, w = color.shape[:2]
-        new_h = h - (h % 14)
-        new_w = w - (w % 14)
-        color = color[:new_h, :new_w]
-        depth = depth[:new_h, :new_w]
+    # def neural_depth(self, color, depth):
+    #     # max_size // 14 = 0
+    #     # ensure color and depth max size is multiple of 14
+    #     h, w = color.shape[:2]
+    #     new_h = h - (h % 14)
+    #     new_w = w - (w % 14)
+    #     color = color[:new_h, :new_w]
+    #     depth = depth[:new_h, :new_w]
 
-        print(f"mean depth: {np.mean(depth)}, min depth: {np.min(depth)}, max depth: {np.max(depth)}")
+    #     print(f"mean depth: {np.mean(depth)}, min depth: {np.min(depth)}, max depth: {np.max(depth)}")
 
-        # neural depth prediction
-        color = cv2.cvtColor(color, cv2.COLOR_RGB2BGR)  # convert to BGR for OpenCV
-        color_t = torch.tensor(color).permute(2, 0, 1).unsqueeze(0).float() / 255.0
-        color_t = color_t.to("cuda")
-        depth_t = torch.tensor(depth).unsqueeze(0).unsqueeze(0).float()
-        depth_t = depth_t.to("cuda")
-        print(f"Color shape: {color_t.shape}, Depth shape: {depth_t.shape}")
-        depth_neural = self.promptda.predict(color_t, depth_t)
-        print(f"Depth neural shape: {depth_neural.shape}")
+    #     # neural depth prediction
+    #     color = cv2.cvtColor(color, cv2.COLOR_RGB2BGR)  # convert to BGR for OpenCV
+    #     color_t = torch.tensor(color).permute(2, 0, 1).unsqueeze(0).float() / 255.0
+    #     color_t = color_t.to("cuda")
+    #     depth_t = torch.tensor(depth).unsqueeze(0).unsqueeze(0).float()
+    #     depth_t = depth_t.to("cuda")
+    #     print(f"Color shape: {color_t.shape}, Depth shape: {depth_t.shape}")
+    #     depth_neural = self.promptda.predict(color_t, depth_t)
+    #     print(f"Depth neural shape: {depth_neural.shape}")
 
-        print(f"mean neural depth: {torch.mean(depth_neural)}, min neural depth: {torch.min(depth_neural)}, max neural depth: {torch.max(depth_neural)}")
+    #     print(f"mean neural depth: {torch.mean(depth_neural)}, min neural depth: {torch.min(depth_neural)}, max neural depth: {torch.max(depth_neural)}")
 
-        # convert to numpy and squeeze
-        depth_neural = depth_neural.squeeze().cpu().numpy()
-        # resize to original size
-        depth_neural = cv2.resize(depth_neural, (w, h), interpolation=cv2.INTER_LINEAR)
+    #     # convert to numpy and squeeze
+    #     depth_neural = depth_neural.squeeze().cpu().numpy()
+    #     # resize to original size
+    #     depth_neural = cv2.resize(depth_neural, (w, h), interpolation=cv2.INTER_LINEAR)
 
-        return depth_neural
+    #     return depth_neural
 
 
 

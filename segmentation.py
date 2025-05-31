@@ -11,6 +11,7 @@ import open3d as o3d
 
 from object import Object
 from vlm import VLM
+from transformers import AutoImageProcessor, AutoModel
 
 
 def mask_radius(mask: np.ndarray) -> int:
@@ -85,13 +86,13 @@ class Segmentation:
         #         min_mask_region_area=250,
         #         points_per_batch=256,
         #     )
-        
+        # ────────────── YOLOv12 for coarse boxes ────────────────
         self.yolo = YOLO("yolo12x.pt")  
-
-
-
         # ────────────── vlM for zero-shot labels ────────────────
         self.vlm = VLM(device=self.device) 
+        # ────────────── Object embedding generator ────────────────
+        self.object_embedding_generator = ObjectEmbeddingGenerator()
+            
 
 
 
@@ -208,8 +209,8 @@ class Segmentation:
             bbox = mask['bbox']
             center = (int(bbox[0] + bbox[2] / 2), int(bbox[1] + bbox[3] / 2))
             # get the name of the object
-            name = self.vlm.ask(image, center, radius)
-            # name = "unknown"
+            # name = self.vlm.ask(image, center, radius)
+            name = "unknown"
             # print(f"Object: {name}, Radius: {radius}, Center: {center}")
             # calc the centroid of the pcd_segment
 
@@ -226,9 +227,12 @@ class Segmentation:
             pcd_o3d = o3d.geometry.PointCloud()
             pcd_o3d.points = o3d.utility.Vector3dVector(pcd_segment[:, :3])
 
+            embedding  = self.object_embedding_generator.generate_embedding(image, segm)
+        
+
             obb = pcd_o3d.get_oriented_bounding_box()
 
-            obj = Object(name, centroid, bbox, segm, pcd=pcd_segment, obb=obb)
+            obj = Object(name, centroid, bbox, segm, pcd=pcd_segment, obb=obb, embedding=embedding)
             self.objects.append(obj)
 
         t1 = time.time()
@@ -244,3 +248,62 @@ class Segmentation:
 
 
 
+
+
+
+class ObjectEmbeddingGenerator:
+    """Generates embeddings for objects using a pre-trained model."""
+
+    def __init__(self, model_name: str =  "facebook/dinov2-small", device: str = "cuda"):
+        self.device = device    
+        self.processor = AutoImageProcessor.from_pretrained('facebook/dinov2-small')
+        self.model = AutoModel.from_pretrained(model_name).to(self.device)
+
+    def generate_embedding(self, image: np.ndarray, mask: np.ndarray) -> torch.Tensor:
+        """Generates an embedding for the given image."""
+        # create three diffrent crops of the image
+        # 1. Crop a box around the mask and leave all pixels untouched.
+        ys, xs = np.where(mask)
+        if len(xs) == 0 or len(ys) == 0:
+            crop1 = image
+        else:
+            x_min, x_max = xs.min(), xs.max()
+            y_min, y_max = ys.min(), ys.max()
+            crop1 = image[y_min:y_max+1, x_min:x_max+1]
+
+        # 2. Crop a box around the mask and fill all pixels outside the mask with black.
+        if len(xs) == 0 or len(ys) == 0:
+            crop2 = image.copy()
+        else:
+            crop2 = image[y_min:y_max+1, x_min:x_max+1].copy()
+            mask_crop = mask[y_min:y_max+1, x_min:x_max+1]
+            crop2[mask_crop == 0] = 0
+
+        # 3. Crop a larger box around the mask and leave all pixels untouched.
+        if len(xs) == 0 or len(ys) == 0:
+            crop3 = image
+        else:
+            h, w, _ = image.shape
+            pad_x = int((x_max - x_min) * 0.2)
+            pad_y = int((y_max - y_min) * 0.2)
+            x_min_ext = max(x_min - pad_x, 0)
+            y_min_ext = max(y_min - pad_y, 0)
+            x_max_ext = min(x_max + pad_x, w - 1)
+            y_max_ext = min(y_max + pad_y, h - 1)
+            crop3 = image[y_min_ext:y_max_ext+1, x_min_ext:x_max_ext+1]
+
+        # # visualize the cropsq
+        # cv2.imshow("Crop 1", crop1)
+        # cv2.imshow("Crop 2", crop2)
+        # cv2.imshow("Crop 3", crop3)
+        # cv2.waitKey(100)
+
+        images = [crop1, crop2, crop3]
+
+        input = self.processor(images=images, return_tensors="pt").to(self.device)
+        with torch.no_grad():
+            outputs = self.model(**input)
+            embedding = outputs.last_hidden_state
+
+        avg_embedding = embedding.mean(dim=0)
+        return avg_embedding.cpu().numpy().squeeze()

@@ -7,6 +7,9 @@
 [submodule "third_party/EdgeTAM"]
 	path = third_party/EdgeTAM
 	url = https://github.com/facebookresearch/EdgeTAM.git
-[submodule "third_party/AVION_BUT"]
-	path = third_party/AVION_BUT
+[submodule "third_party/PromptDA"]
+	path = third_party/PromptDA
+	url = https://github.com/DepthAnything/PromptDA
+[submodule "third_party/AV"]
+	path = third_party/PromptDA
 	url = git@github.com:3dvision-cecn/AVION_BUT.git

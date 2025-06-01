@@ -10,6 +10,6 @@
 [submodule "third_party/PromptDA"]
 	path = third_party/PromptDA
 	url = https://github.com/DepthAnything/PromptDA
-[submodule "third_party/AV"]
-	path = third_party/PromptDA
+[submodule "third_party/AVION_BUT"]
+	path = third_party/AVION_BUT
 	url = git@github.com:3dvision-cecn/AVION_BUT.git

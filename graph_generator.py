@@ -52,14 +52,24 @@ class GraphGenerator:
             # retunr an empty graph if no hands are provided
             print("No hands provided, returning empty graph.")
             return hd            
+        
+        # check if hand has attribute embedding
+        if hasattr(hands.left_hand, 'embedding'):
+            add_hand("left",  hands.left_hand)
 
-        add_hand("left",  hands.left_hand)
-        add_hand("right", hands.right_hand)
+        if hasattr(hands.right_hand, 'embedding'):
+            add_hand("right", hands.right_hand)
+
+        # convert labes to 0 for unknown, 1 for left hand, 2 for right hand
+        labels_int = [0 if label == "unknown" else 1 if label == "left_hand" else 2 for label in labels]
 
         # tensors
         hd['object'].x   = torch.tensor(feat, dtype=torch.float)
+        hd['object'].labels = torch.tensor(labels_int, dtype=torch.long)  # labels as indices
         hd['object'].pos = torch.tensor(pos,  dtype=torch.float)
         hd['object'].node_id = torch.arange(len(feat))  # optional bookkeeping
+
+        print(f"Labels: {labels_int}")
 
         # ------------------------------------------------------------------
         # 3. build hand→object distance edges

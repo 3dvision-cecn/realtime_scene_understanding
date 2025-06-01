@@ -1,5 +1,5 @@
 video:
-  path: recordings/efe_kitchen_tea/2025-05-04--19-55-15
+  path: recordings/efe_kitchen/val/01
 
 hand_detection_mediapipe:
   model_path: conf/checkpoints/mediapipe/hand_landmarker.task

@@ -32,8 +32,19 @@ class TrainingGenerator():
         root_dir = "graph_samples"
         # add date and time to the directory name
 
-        now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        self.sample_dir = f"{root_dir}/{now}"
+        source = cfg.video.path
+
+        # get the last part of the source path
+        last_slash = source.rfind('/')
+        name = source[last_slash + 1:] 
+
+        # get the string between the last two slashes either train or val
+        second_last_slash = source[:last_slash].rfind('/')
+        folder = source[second_last_slash + 1:last_slash]
+        
+
+
+        self.sample_dir = f"{root_dir}/{folder}/{name}"
         os.makedirs(self.sample_dir, exist_ok=True)
 
         self.sequence_count = 0
@@ -87,7 +98,8 @@ class TrainingGenerator():
                     "features": np.empty((0, 0), dtype=np.float16),
                     "pos":     np.empty((0, 3), dtype=np.float16),
                     "edges":   np.empty((2, 0), dtype=np.int32),
-                    "edge_lbl": np.empty((0,), dtype=np.float32)
+                    "edge_lbl": np.empty((0,), dtype=np.float32),
+                    "labels":  np.empty((0,), dtype=np.int32)
                 })
                 continue
 
@@ -96,6 +108,7 @@ class TrainingGenerator():
 
             # -- position (optional) ---------------------------------------------
             pos_np = graph["object"].pos.cpu().numpy().astype(np.float16)  # (N, 3) or (N, 2)
+            labels_np = graph["object"].labels.cpu().numpy()  # (N,)
 
 
             # --- relations ---------------------------------------------------------
@@ -113,6 +126,7 @@ class TrainingGenerator():
                 "pos":     pos_np,                        # (N, 3) or (N, 2)
                 "edges":    np.vstack([rel_src, rel_dst]).astype(np.int32),   # (2,E)
                 "edge_lbl": np.array(rel_lbl, dtype=np.float32),              # (E,)
+                "labels": labels_np.astype(np.int32)  # (N,)  int32
             })
 
         # ------------------------------------------------------------------
@@ -137,6 +151,10 @@ class TrainingGenerator():
                 
                 g.create_dataset("pos",
                                 data = frame["pos"],
+                                compression = "gzip", compression_opts = 6)
+                
+                g.create_dataset("labels",
+                                data = frame["labels"],
                                 compression = "gzip", compression_opts = 6)
 
                 g.create_dataset("edge_index",

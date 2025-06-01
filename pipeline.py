@@ -45,7 +45,7 @@ def main(cfg: DictConfig):
     graph_generator = GraphGenerator(cfg.graph_generator)
 
     # training generator
-    training_generator = TrainingGenerator(cfg.training_generator)
+    training_generator = TrainingGenerator(cfg)
 
     # ---- Reduce to ~10 FPS ----
     last_process_ts = -float('inf')

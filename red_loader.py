@@ -28,19 +28,32 @@ import torch
 # from promptda.promptda import PromptDA
 
 
-def load_depth(filepath, desired_width=960, desired_height=720):
+def load_depth(filepath, is_rotated, desired_width=960, desired_height=720):
     with open(filepath, 'rb') as depth_fh:
         raw_bytes = depth_fh.read()
         decompressed_bytes = liblzfse.decompress(raw_bytes)
         depth_img = np.frombuffer(decompressed_bytes, dtype=np.float32)
-        depth_img = depth_img.reshape((192, 256))  # Original resolution
+        if is_rotated:
+            depth_img = depth_img.reshape((256, 192))
+            # rotate the image 90 degrees counterclockwise
+            depth_img = np.rot90(depth_img, k=1)
+        else:
+            depth_img = depth_img.reshape((192, 256))  # Original resolution
         depth_img = cv2.resize(depth_img, (desired_width, desired_height), interpolation=cv2.INTER_LINEAR)
+        
     return depth_img
 
 def load_color(filepath):
     img = cv2.imread(filepath)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    return img
+    # print the shape of the image
+    # if shape is 960x720 rotate it 90 degrees clockwise
+    is_rotated = False
+    if img.shape[:2] == (960, 720):
+        img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        is_rotated = True
+    
+    return img, is_rotated
 
 
 def get_poses(metadata_dict: dict) -> int:
@@ -138,8 +151,8 @@ class R3D_loader:
         if self.frame_idx >= len(self.color_paths):
             return None, None, None, None
 
-        color = load_color(self.color_paths[self.frame_idx])
-        depth = load_depth(self.depth_paths[self.frame_idx])
+        color, is_rotated = load_color(self.color_paths[self.frame_idx])
+        depth = load_depth(self.depth_paths[self.frame_idx], is_rotated)
 
         # neural_depth = self.neural_depth(color, depth)
 

@@ -175,7 +175,7 @@ class Segmentation:
                 # skip small masks
                 continue
             # skip very large masks like the background
-            if len(pcd_segment) > 200 * 200:
+            if len(pcd_segment) > 400 * 400:
                 continue
 
             # skip masks that contain any hand keypoints
@@ -293,19 +293,22 @@ class ObjectEmbeddingGenerator:
             crop3 = image
         else:
             h, w, _ = image.shape
-            pad_x = int((x_max - x_min) * 0.2)
-            pad_y = int((y_max - y_min) * 0.2)
+            pad_x = int((x_max - x_min) * 0.4)
+            pad_y = int((y_max - y_min) * 0.4)
             x_min_ext = max(x_min - pad_x, 0)
             y_min_ext = max(y_min - pad_y, 0)
             x_max_ext = min(x_max + pad_x, w - 1)
             y_max_ext = min(y_max + pad_y, h - 1)
             crop3 = image[y_min_ext:y_max_ext+1, x_min_ext:x_max_ext+1]
 
-        # # visualize the cropsq
-        # cv2.imshow("Crop 1", crop1)
-        # cv2.imshow("Crop 2", crop2)
-        # cv2.imshow("Crop 3", crop3)
-        # cv2.waitKey(100)
+        # visualize the cropsq
+        # crop1_bgr = cv2.cvtColor(crop1, cv2.COLOR_RGB2BGR)
+        # crop2_bgr = cv2.cvtColor(crop2, cv2.COLOR_RGB2BGR)
+        # crop3_bgr = cv2.cvtColor(crop3, cv2.COLOR_RGB2BGR)
+        # cv2.imshow("Crop 1", crop1_bgr)
+        # cv2.imshow("Crop 2", crop2_bgr)
+        # cv2.imshow("Crop 3", crop3_bgr)
+        # cv2.waitKey(1000000)
 
         images = [crop1, crop2, crop3]
 
@@ -331,15 +334,25 @@ class ObjectEmbeddingGenerator:
         y_min = int(hand_keypoints[:, 1].min())
         y_max = int(hand_keypoints[:, 1].max())
 
-        pad_x = int((x_max - x_min) * 0.2)
-        pad_y = int((y_max - y_min) * 0.2)
+        pad_x = int((x_max - x_min) * 0.4)
+        pad_y = int((y_max - y_min) * 0.4)
 
         x_min = max(x_min - pad_x, 0)
         y_min = max(y_min - pad_y, 0)
         x_max = min(x_max + pad_x, image.shape[1] - 1)
         y_max = min(y_max + pad_y, image.shape[0] - 1)
 
+        # check the size of the crop
+        if (x_max - x_min) < 10 or (y_max - y_min) < 10:
+            print("Hand crop is too small, skipping embedding generation.")
+            return None
+
         hand_crop = image[y_min:y_max+1, x_min:x_max+1]
+
+        # visualize the hand crop
+        # cv2.imshow("Hand Crop", hand_crop)
+        # cv2.waitKey(1000)
+
 
         # # visalize the hand crop
         # cv2.imshow("Hand Crop", hand_crop)

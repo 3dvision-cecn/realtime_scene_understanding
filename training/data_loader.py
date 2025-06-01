@@ -59,6 +59,8 @@ class GraphDataset(Dataset):
         # Create PyG graph
         data = HeteroData()
         data['object'].x = node_embeddings
+
+        
         data['object', 'relation', 'object'].edge_index = relational_edge_index
         if relational_edges:
             data['object', 'relation', 'object'].edge_attr = relation_embeddings

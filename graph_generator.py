@@ -69,6 +69,9 @@ class GraphGenerator:
         obj_pos_np = np.asarray(pos[:obj_cnt])               # objects only
         for h_idx in range(obj_cnt, len(feat)):              # indices of hands
             d = np.linalg.norm(obj_pos_np - pos[h_idx], axis=1)  # (obj_cnt,)
+            rel_pos = obj_pos_np - pos[h_idx]  # (obj_cnt, 3)
+            # get a vector (obj_cnt, 4) with the distance and the relative position
+            d = np.hstack((d[:, np.newaxis], rel_pos))  # (obj_cnt, 4)  distance + relative position
             edge_src.extend([h_idx] * obj_cnt)
             edge_dst.extend(range(obj_cnt))
             edge_attr.extend(d.tolist())
@@ -85,10 +88,8 @@ class GraphGenerator:
         print(f"Edges destination: {edge_dst}")
 
         rerun_edges = []
-        rerun_edge_labels = []
         for src, dst, attr in zip(edge_src, edge_dst, edge_attr):
             rerun_edges.append((src, dst))
-            rerun_edge_labels.append(f"{attr:.2f}")
 
 
         # ------------------------------------------------------------------

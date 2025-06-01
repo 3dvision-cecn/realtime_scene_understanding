@@ -264,7 +264,7 @@ class ObjectEmbeddingGenerator:
 
     def __init__(self, model_name: str =  "facebook/dinov2-small", device: str = "cuda"):
         self.device = device    
-        self.processor = AutoImageProcessor.from_pretrained('facebook/dinov2-small')
+        self.processor = AutoImageProcessor.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name).to(self.device)
 
 
@@ -314,8 +314,8 @@ class ObjectEmbeddingGenerator:
             outputs = self.model(**input)
             embedding = outputs.last_hidden_state
 
-        avg_embedding = embedding.mean(dim=0)
-        return avg_embedding.cpu().numpy().squeeze()
+        avg_embedding = embedding.mean(dim=0).mean(dim=0)
+        return avg_embedding.cpu().numpy()
     
 
     def generate_embeddings_hands(self, image: np.ndarray, hand_keypoints: list) -> torch.Tensor:
@@ -349,5 +349,5 @@ class ObjectEmbeddingGenerator:
         with torch.no_grad():
             outputs = self.model(**input_data)
         # average the features across token sequence dimension
-        embedding = outputs.last_hidden_state
+        embedding = outputs.last_hidden_state.squeeze(0).mean(dim=0)
         return embedding.cpu().numpy().squeeze()

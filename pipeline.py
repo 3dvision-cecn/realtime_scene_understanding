@@ -13,6 +13,9 @@ from hand_detection_hamer import HandDetection
 from segmentation import Segmentation
 from graph_generator import GraphGenerator
 from red_loader import R3D_loader
+from training_generator import TrainingGenerator
+
+
 from scipy.spatial.transform import Rotation
 
 # ──────────── CONFIGURE SEGMENT OUTPUT ────────────
@@ -41,9 +44,12 @@ def main(cfg: DictConfig):
     # graph generator
     graph_generator = GraphGenerator(cfg.graph_generator)
 
+    # training generator
+    training_generator = TrainingGenerator(cfg.training_generator)
+
     # ---- Reduce to ~10 FPS ----
     last_process_ts = -float('inf')
-    target_interval = 1.0 / 10.0  # seconds between frames
+    target_interval = 1.0 / 4.0  # seconds between frames
 
 
     SEGMENT_OUTPUT_DIR = "segmented_frames"
@@ -56,6 +62,10 @@ def main(cfg: DictConfig):
         itr+=1
         start_time = time.perf_counter()
         frame_rgb, depth, pose, timestamp = video_loader.next_frame()
+
+        if frame_rgb is None or depth is None or pose is None:
+            print("No more frames available, exiting.")
+            break
 
         pixel_indexed_pcd = video_loader.generate_pixel_indexed_pcd(frame_rgb, depth, pose)
         if pixel_indexed_pcd is None:
@@ -92,7 +102,7 @@ def main(cfg: DictConfig):
 
         # Segmentation
         t0 = time.time()
-        objects, seg_img = segmentation.segment(
+        objects, seg_img, hand_data = segmentation.segment(
             img, pixel_indexed_pcd, hand_data, timestamp_ms=int(timestamp * 1000), iteration=itr
         )
         t1 = time.time()
@@ -162,10 +172,12 @@ def main(cfg: DictConfig):
 
 
 
-        # # Graph generation
-        # if hand_data is not None:
-        #  graph, graph_img = graph_generator.generate_graph(img, masks, hand_data)
-        #  rr.log("graph_image", rr.Image(graph_img))
+
+
+        graph = graph_generator.generate_graph(img, objects, hand_data)
+
+        # Training generator
+        training_generator.add_sequence(img, graph)
 
         end_time = time.perf_counter()
         print(f"Processing time for frame {itr}: {end_time - start_time:.3f} seconds")

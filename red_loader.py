@@ -227,6 +227,11 @@ class R3D_loader:
             self.intrinsics_dict["fx"], self.intrinsics_dict["fy"],
             self.intrinsics_dict["cx"], self.intrinsics_dict["cy"],
         )
+
+        if color.shape[0] * color.shape[1] != depth.shape[0] * depth.shape[1]:
+            print(f"Warning: color shape {color.shape} does not match depth shape {depth.shape}.")
+            return None
+
         rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
             o3d.geometry.Image(color),
             o3d.geometry.Image(depth * 1000),  # convert depth to mm

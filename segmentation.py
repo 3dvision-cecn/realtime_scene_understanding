@@ -205,6 +205,14 @@ class Segmentation:
                 if num_collisions > 8:
                     continue
 
+            # find the embeeding for the hands
+            if hand_data is not None:
+                left_hand_embedding = self.object_embedding_generator.generate_embeddings_hands(image, hand_data.left_hand.keypoints_image)
+                right_hand_embedding = self.object_embedding_generator.generate_embeddings_hands(image, hand_data.right_hand.keypoints_image)
+                hand_data.left_hand.add_embedding(left_hand_embedding)
+                hand_data.right_hand.add_embedding(right_hand_embedding)
+                
+
             # center of the mask in the original image
             bbox = mask['bbox']
             center = (int(bbox[0] + bbox[2] / 2), int(bbox[1] + bbox[3] / 2))
@@ -244,7 +252,7 @@ class Segmentation:
             cv2.rectangle(annotated_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
             cv2.putText(annotated_img, obj.name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-        return self.objects, annotated_img
+        return self.objects, annotated_img, hand_data
 
 
 
@@ -258,6 +266,7 @@ class ObjectEmbeddingGenerator:
         self.device = device    
         self.processor = AutoImageProcessor.from_pretrained('facebook/dinov2-small')
         self.model = AutoModel.from_pretrained(model_name).to(self.device)
+
 
     def generate_embedding(self, image: np.ndarray, mask: np.ndarray) -> torch.Tensor:
         """Generates an embedding for the given image."""
@@ -307,3 +316,38 @@ class ObjectEmbeddingGenerator:
 
         avg_embedding = embedding.mean(dim=0)
         return avg_embedding.cpu().numpy().squeeze()
+    
+
+    def generate_embeddings_hands(self, image: np.ndarray, hand_keypoints: list) -> torch.Tensor:
+        """Generates embeddings for the hands in the image."""
+        if hand_keypoints is None or len(hand_keypoints) == 0:
+            return None
+
+        hand_keypoints = np.array(hand_keypoints, dtype=np.float32)
+
+        # find the bounding box of the hand keypoints and add some padding
+        x_min = int(hand_keypoints[:, 0].min())
+        x_max = int(hand_keypoints[:, 0].max())
+        y_min = int(hand_keypoints[:, 1].min())
+        y_max = int(hand_keypoints[:, 1].max())
+
+        pad_x = int((x_max - x_min) * 0.2)
+        pad_y = int((y_max - y_min) * 0.2)
+
+        x_min = max(x_min - pad_x, 0)
+        y_min = max(y_min - pad_y, 0)
+        x_max = min(x_max + pad_x, image.shape[1] - 1)
+        y_max = min(y_max + pad_y, image.shape[0] - 1)
+
+        hand_crop = image[y_min:y_max+1, x_min:x_max+1]
+
+        # # visalize the hand crop
+        # cv2.imshow("Hand Crop", hand_crop)
+        # cv2.waitKey(1000)
+
+        input_data = self.processor(images=[hand_crop], return_tensors="pt").to(self.device)
+        with torch.no_grad():
+            outputs = self.model(**input_data)
+        # average the features across token sequence dimension
+        embedding = outputs.last_hidden_state
+        return embedding.cpu().numpy().squeeze()

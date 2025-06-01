@@ -20,6 +20,10 @@ class Hand:
         self.keypoints_pcd = keypoints_pcd
         self.mean_pos = mean_pos
 
+    def add_embedding(self, embedding: np.ndarray):
+        self.embedding = embedding
+
+
 class BothHands:
     def __init__(self, left_hand: Hand, right_hand: Hand):
         self.left_hand = left_hand

@@ -1,0 +1,56 @@
+wandb_version: 1
+
+learning_rate:
+  desc: null
+  value: 0.001
+epochs:
+  desc: null
+  value: 70
+batch_size:
+  desc: null
+  value: 8
+dataset:
+  desc: null
+  value: EPIC-Kitchens-100
+n_classes:
+  desc: null
+  value: 1230
+_wandb:
+  desc: null
+  value:
+    python_version: 3.10.16
+    cli_version: 0.16.3
+    framework: huggingface
+    huggingface_version: 4.51.3
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1748747826.752251
+    t:
+      1:
+      - 1
+      - 5
+      - 11
+      - 49
+      - 53
+      - 55
+      - 77
+      - 105
+      2:
+      - 1
+      - 5
+      - 11
+      - 49
+      - 53
+      - 55
+      - 77
+      - 105
+      3:
+      - 13
+      - 16
+      - 23
+      4: 3.10.16
+      5: 0.16.3
+      6: 4.51.3
+      8:
+      - 5
+      13: linux-x86_64

@@ -203,7 +203,7 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
 
     train_dataset = GraphDataset(
-        data_dir=graph_dir_train,
+        data_dir="/home/eongan/ethz/3d_vision/pipeline/graph_samples/2025-06-01_04-32-44",
         embedder=embedder,
         metadata_csv=train_csv,
         mapping_vn2act=action_mapping

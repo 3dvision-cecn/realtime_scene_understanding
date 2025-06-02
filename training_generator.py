@@ -29,7 +29,11 @@ class TrainingGenerator():
         self.sequence = []
 
         # create a new directory for the training samples
-        root_dir = "graph_samples"
+        root_dir = "dataset/graph_samples"
+        # add date and time to the directory name
+        now = datetime.now()
+        date_time = now.strftime("%Y-%m-%d_%H-%M-%S")
+        root_dir = f"{root_dir}{date_time}"
         # add date and time to the directory name
 
         source = cfg.video.path

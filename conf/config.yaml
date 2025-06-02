@@ -1,5 +1,5 @@
 video:
-  path: recordings/efe_kitchen/val/01
+  path: dataset/recordings/train/01
 
 hand_detection_mediapipe:
   model_path: conf/checkpoints/mediapipe/hand_landmarker.task

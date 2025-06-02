@@ -20,10 +20,8 @@ from scipy.spatial.transform import Rotation
 
 # ──────────── CONFIGURE SEGMENT OUTPUT ────────────
 
-
-@hydra.main(config_path="conf", config_name="config", version_base=None)
-def main(cfg: DictConfig):
-    rr.init("video_stream", spawn=True)  # spawn=True ⇒ open viewer
+def main(cfg, start_rerun: bool = False):
+    rr.init("video_stream", spawn=start_rerun)  # spawn=True ⇒ open viewer
     rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
 
     rr.serve_web_viewer(open_browser=False)
@@ -183,6 +181,60 @@ def main(cfg: DictConfig):
         print(f"Processing time for frame {itr}: {end_time - start_time:.3f} seconds")
         # Log the processing time
 
+import argparse
+
+
 if __name__ == "__main__":
     GlobalHydra.instance().clear()
-    main()
+
+    parser = argparse.ArgumentParser(description="Run the video processing pipeline.")
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        default=False,
+        help="Run the full pipeline on all of the recorded videos.",
+    )
+
+    args = parser.parse_args()
+
+    if args.full:
+
+        # find all the folder in the videos directory
+        train_path = "dataset/recordings/train"
+        val_path = "dataset/recordings/val"
+
+        train_folders = []
+        for folder in os.listdir(train_path):
+            train_folders.append(os.path.join(train_path, folder))
+
+        val_folders = []
+        for folder in os.listdir(val_path):
+            val_folders.append(os.path.join(val_path, folder))
+
+        print("Train folders:", train_folders)
+        print("Val folders:", val_folders)
+        # get the config from hydra
+        from hydra.utils import instantiate
+        from omegaconf import OmegaConf
+        from hydra import compose, initialize
+        with initialize(config_path="conf", version_base=None):
+            cfg = compose(config_name="config")
+            # first process the training videos
+            for folder in train_folders:
+                cfg.video.path = folder
+                print(f"Processing training folder: {folder}")
+                main(cfg=cfg)
+            # then process the validation videos
+            for folder in val_folders:
+                cfg.video.path = folder
+                print(f"Processing validation folder: {folder}")
+    
+    else:
+        # Run the pipeline on a single video diectly from the config
+        from hydra import compose, initialize
+        with initialize(config_path="conf", version_base=None):
+            cfg = compose(config_name="config")
+            main(cfg, start_rerun=True)
+    
+
+

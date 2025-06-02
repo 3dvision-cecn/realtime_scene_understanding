@@ -15,16 +15,18 @@ class GraphClassifier(nn.Module):
 
         # create MLP for edge features
         self.edge_mlp = nn.Sequential(
-            nn.Linear(edge_feat_dim, 64),
+            nn.Linear(edge_feat_dim, 512),
             nn.ReLU(),
-            nn.Linear(64, feat_dim)
+            nn.Dropout(0.5),
+            nn.Linear(512, feat_dim)
         )
 
         # create a mlp for node features
         self.node_mlp = nn.Sequential(
-            nn.Linear(in_channels, hidden_channels),
+            nn.Linear(in_channels, 512),
             nn.ReLU(),
-            nn.Linear(hidden_channels, feat_dim)
+            nn.Dropout(0.5),
+            nn.Linear(512, feat_dim)
         )
 
 
@@ -38,15 +40,18 @@ class GraphClassifier(nn.Module):
         self.pool = global_mean_pool # Try GAT Pooling
 
     def forward(self, x_dict, edge_index_dict, edge_attr_dict, batch):
-        x_dict = self.conv(x_dict, edge_index_dict, edge_attr_dict)
-
-        # Apply MLP to node features
+        # apply MLP to node features
         for key in x_dict.keys():
-            x_dict[key] = self.node_mlp(x_dict[key])
-        
-        # Apply MLP to relation features
+            if 'object' in key:
+                x_dict[key] = self.node_mlp(x_dict[key])
+            
+        # apply MLP to edge features
         for key in edge_attr_dict.keys():
-            edge_attr_dict[key] = self.edge_mlp(edge_attr_dict[key])
+            if 'relation' in key:
+                edge_attr_dict[key] = self.edge_mlp(edge_attr_dict[key])
+
+
+        x_dict = self.conv(x_dict, edge_index_dict, edge_attr_dict)
         
         # Handle single graph case in inference or batched graphs in training
         if 'batch' in batch['object']:

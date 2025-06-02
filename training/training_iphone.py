@@ -220,8 +220,8 @@ def main(args):
     graph_dir_train = os.path.join(DATASET_DIR, "train")
     graph_dir_val = os.path.join(DATASET_DIR, "val")
 
-    train_csv = "/home/eongan/ethz/3d_vision/pipeline/conf/ek100/EPIC_100_train.csv"
-    val_csv = "/home/eongan/ethz/3d_vision/pipeline/conf/ek100/EPIC_100_train.csv"
+    train_csv = "conf/ek100/EPIC_100_train.csv"
+    val_csv = "conf/ek100/EPIC_100_train.csv"
 
     label, mapping_vn2act = generate_label_map('ek100_cls')
     mapping_act2v = {i: int(vn.split(':')[0]) for (vn, i) in mapping_vn2act.items()}
@@ -234,7 +234,7 @@ def main(args):
 
     print(f"Num actions: {len(mapping_vn2act)}")
 
-    model = GraphClassifier(384, 64, 4, len(mapping_vn2act)).to(device)
+    model = GraphClassifier(3072, 64, 4, len(mapping_vn2act)).to(device)
     optimizer = optim.Adam(model.parameters(), lr=LR)
     criterion = nn.CrossEntropyLoss()
 

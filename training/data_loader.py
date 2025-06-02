@@ -8,6 +8,8 @@ import csv
 import h5py
 import itertools 
 import collections
+import networkx as nx
+import numpy as np
 
 def verify_hypergraph(data: 'HeteroData'):
     """
@@ -15,6 +17,7 @@ def verify_hypergraph(data: 'HeteroData'):
     Prints a readable summary and raises AssertionError on failures.
     """
     import collections
+
     num_nodes  = data['object'].num_nodes
     rel_e      = data['object', 'relation', 'object'].edge_index.size(1)
     temp_e     = data['object', 'temporal', 'object'].edge_index.size(1)
@@ -220,11 +223,13 @@ class GraphDataset(Dataset):
         data['object', 'temporal', 'object'].edge_index = temp_index
 
 
+
+
         # Graph-level label
         zeros = torch.zeros((3806,), dtype=torch.float)  
         zeros[label] = 1.0
         data.y = zeros.unsqueeze(0)
 
-        #verify_hypergraph(data)
+        # verify_hypergraph(data)
 
         return data

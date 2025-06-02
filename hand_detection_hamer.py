@@ -61,7 +61,7 @@ class HandDetection:
         with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
             det_out = self.detector(image)
         t1 = time.time()
-        print(f"Body detection took {t1 - t0:.3f} seconds")
+        # print(f"Body detection took {t1 - t0:.3f} seconds")
         det_instances = det_out['instances']
         valid_idx = (det_instances.pred_classes==0) & (det_instances.scores > 0.5)
         pred_bboxes=det_instances.pred_boxes.tensor[valid_idx].cpu().numpy()
@@ -72,7 +72,7 @@ class HandDetection:
             [np.concatenate([pred_bboxes, pred_scores[:, None]], axis=1)],
         )
         t1 = time.time()
-        print(f"ViTPose took {t1 - t0:.3f} seconds")
+        # print(f"ViTPose took {t1 - t0:.3f} seconds")
 
         bboxes = []
         is_right = []

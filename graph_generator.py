@@ -69,7 +69,7 @@ class GraphGenerator:
         hd['object'].pos = torch.tensor(pos,  dtype=torch.float)
         hd['object'].node_id = torch.arange(len(feat))  # optional bookkeeping
 
-        print(f"Labels: {labels_int}")
+        # print(f"Labels: {labels_int}")
 
         # ------------------------------------------------------------------
         # 3. build hand→object distance edges
@@ -94,8 +94,8 @@ class GraphGenerator:
             edge_attr, dtype=torch.float
         ).unsqueeze(1)                                       # (E,1)
 
-        print(f"Edges source: {edge_src}")
-        print(f"Edges destination: {edge_dst}")
+        # print(f"Edges source: {edge_src}")
+        # print(f"Edges destination: {edge_dst}")
 
         rerun_edges = []
         for src, dst, attr in zip(edge_src, edge_dst, edge_attr):

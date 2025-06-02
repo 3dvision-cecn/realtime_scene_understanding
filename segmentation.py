@@ -106,7 +106,7 @@ class Segmentation:
 
         # run yolo with ver low confidence to get all of the boxes and show the boxes with opencv
         image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        yolo_results = self.yolo(image_bgr, conf=self.conf, iou=self.iou, imgsz=self.imgsz)
+        yolo_results = self.yolo(image_bgr, conf=self.conf, iou=self.iou, imgsz=self.imgsz, verbose=False)
 
         points = []
         for result in yolo_results:
@@ -125,7 +125,7 @@ class Segmentation:
 
         # convert to numpy array
         points = np.array(points, dtype=np.half)
-        print(f"Number of points for SAM-2: {len(points)}")
+        # print(f"Number of points for SAM-2: {len(points)}")
         sam2_points = []
         sam2_points.append(points)
 
@@ -145,7 +145,7 @@ class Segmentation:
         # bf16 image
         masks = self.sam.generate(image)
         t1 = time.time()
-        print(f"Time taken for SAM-2 segmentation: {t1 - t0:.2f} seconds")
+        # print(f"Time taken for SAM-2 segmentation: {t1 - t0:.2f} seconds")
 
         # # visualize the masks on the image
         annotated_img = image.copy()
@@ -244,7 +244,7 @@ class Segmentation:
             self.objects.append(obj)
 
         t1 = time.time()
-        print(f"Time taken for PCD and VLM processing: {t1 - t0:.2f} seconds")
+        # print(f"Time taken for PCD and VLM processing: {t1 - t0:.2f} seconds")
 
         # create an annotated image
         for obj in self.objects:

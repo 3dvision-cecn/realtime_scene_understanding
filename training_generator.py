@@ -32,8 +32,8 @@ class TrainingGenerator():
         root_dir = "dataset/graph_samples"
         # add date and time to the directory name
         now = datetime.now()
-        date_time = now.strftime("%Y-%m-%d_%H-%M-%S")
-        root_dir = f"{root_dir}{date_time}"
+        cfg.training_generator.path
+        root_dir = f"{cfg.training_generator.path}"
         # add date and time to the directory name
 
         source = cfg.video.path

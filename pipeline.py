@@ -17,14 +17,15 @@ from training_generator import TrainingGenerator
 
 
 from scipy.spatial.transform import Rotation
-
+import torch
 # ──────────── CONFIGURE SEGMENT OUTPUT ────────────
 
 def main(cfg, start_rerun: bool = False):
-    rr.init("video_stream", spawn=start_rerun)  # spawn=True ⇒ open viewer
-    rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
+    # disable rerun's default logging
+    # do not record the rerun if start_rerun is False
+    # clear the rerun log if start_rerun is True
 
-    rr.serve_web_viewer(open_browser=False)
+    rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
 
     #ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     #rec_path = os.path.join("/workspace", f"video_stream_{ts}.rrd")
@@ -91,7 +92,6 @@ def main(cfg, start_rerun: bool = False):
             img, pixel_indexed_pcd, timestamp_ms=int(timestamp * 1000)
         )
         t1 = time.time()
-        print(f"Hand detection took {t1 - t0:.3f} seconds")
         rr.log("hand_detection/annotated_image", rr.Image(hd_img))
         
 
@@ -104,11 +104,9 @@ def main(cfg, start_rerun: bool = False):
             img, pixel_indexed_pcd, hand_data, timestamp_ms=int(timestamp * 1000), iteration=itr
         )
         t1 = time.time()
-        print(f"Segmentation took {t1 - t0:.3f} seconds")
 
         t1 = time.perf_counter()
 
-        print(f"Segmentation took {t1 - t0:.3f} seconds")
         rr.log("segmentation/annotated_image", rr.Image(seg_img))
 
         # # ───── Save segmented frame ─────
@@ -219,11 +217,21 @@ if __name__ == "__main__":
         from hydra import compose, initialize
         with initialize(config_path="conf", version_base=None):
             cfg = compose(config_name="config")
+
+            # create a randoom folder in dataset/graph_samplesXXXXX
+            cfg.training_generator.path = f"dataset/graph_samples{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
             # first process the training videos
             for folder in train_folders:
                 cfg.video.path = folder
                 print(f"Processing training folder: {folder}")
                 main(cfg=cfg)
+                rr.Clear(recursive=True)
+                # empty the cuda cache and free up cuda memory
+                torch.cuda.empty_cache()
+
+
+
             # then process the validation videos
             for folder in val_folders:
                 cfg.video.path = folder
@@ -233,6 +241,9 @@ if __name__ == "__main__":
         # Run the pipeline on a single video diectly from the config
         from hydra import compose, initialize
         with initialize(config_path="conf", version_base=None):
+            rr.init("video_stream", spawn=True)  # spawn=True ⇒ open viewer
+            rr.serve_web_viewer(open_browser=False)
+
             cfg = compose(config_name="config")
             main(cfg, start_rerun=True)
     

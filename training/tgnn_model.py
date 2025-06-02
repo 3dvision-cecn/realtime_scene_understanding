@@ -6,22 +6,47 @@ from torch_geometric.nn import (GATConv, TransformerConv, HeteroConv, global_mea
 # TGNN Model
 class GraphClassifier(nn.Module):
     def __init__(self, in_channels, hidden_channels, 
-                 edge_feat_dim, out_channels):
+                 edge_feat_dim, out_channels, feat_dim=128):
         super().__init__()
 
-        self.conv = HeteroConv({
-            ('object', 'relation', 'object'): GATConv(in_channels, hidden_channels, edge_dim=edge_feat_dim),
-            ('object', 'temporal', 'object'): TransformerConv(in_channels, hidden_channels),
-        }, aggr='sum')
 
         self.fc1 = nn.Linear(hidden_channels, 128)
         self.fc2 = nn.Linear(128, out_channels)
+
+        # create MLP for edge features
+        self.edge_mlp = nn.Sequential(
+            nn.Linear(edge_feat_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, feat_dim)
+        )
+
+        # create a mlp for node features
+        self.node_mlp = nn.Sequential(
+            nn.Linear(in_channels, hidden_channels),
+            nn.ReLU(),
+            nn.Linear(hidden_channels, feat_dim)
+        )
+
+
+        self.conv = HeteroConv({
+            ('object', 'relation', 'object'): GATConv(feat_dim, hidden_channels, edge_dim=feat_dim),
+            ('object', 'temporal', 'object'): TransformerConv(feat_dim, hidden_channels),
+        }, aggr='sum')
+
 
         # Aggregate node features
         self.pool = global_mean_pool # Try GAT Pooling
 
     def forward(self, x_dict, edge_index_dict, edge_attr_dict, batch):
         x_dict = self.conv(x_dict, edge_index_dict, edge_attr_dict)
+
+        # Apply MLP to node features
+        for key in x_dict.keys():
+            x_dict[key] = self.node_mlp(x_dict[key])
+        
+        # Apply MLP to relation features
+        for key in edge_attr_dict.keys():
+            edge_attr_dict[key] = self.edge_mlp(edge_attr_dict[key])
         
         # Handle single graph case in inference or batched graphs in training
         if 'batch' in batch['object']:

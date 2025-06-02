@@ -39,3 +39,4 @@ training_generator:
   avion:
     pretrain_path: avion_pretrain_lavila_vitb_best.pt
     fine_tune_path: avion_finetune_cls_lavila_vitb_best.pt
+  path: temp

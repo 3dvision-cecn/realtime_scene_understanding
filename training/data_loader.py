@@ -216,6 +216,21 @@ class GraphDataset(Dataset):
         data['object'].orig_id  = orig_ids
         data['object'].frame_id = frame_ids
 
+        # augment the rek_index and rel_attr by sampling edges in the other direction as well
+        # augmented_edge_index = torch.zeros((2, rel_index.shape[1] * 2) , dtype=torch.int)
+        # # print("edge index shape:", rel_index.shape)
+        # # print("augmented edge index shape:", augmented_edge_index.shape)
+        # augmented_edge_index[0, :rel_index.shape[1]] = rel_index[0, :]
+        # augmented_edge_index[1, :rel_index.shape[1]] = rel_index[1, :]
+
+        # augmented_edge_index[0, rel_index.shape[1]:] = rel_index[1, :]
+        # augmented_edge_index[1, rel_index.shape[1]:] = rel_index[0, :]
+
+
+
+        # augment the edge features too
+        # augmented_rel_attr = torch.cat((rel_attr, rel_attr), dim=0)
+
         data['object', 'relation', 'object'].edge_index = rel_index
         if rel_attr is not None:
             data['object', 'relation', 'object'].edge_attr  = rel_attr

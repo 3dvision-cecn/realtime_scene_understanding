@@ -1,6 +1,6 @@
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import (GATConv, TransformerConv, HeteroConv, global_mean_pool)
+from torch_geometric.nn import (GATConv, TransformerConv, HeteroConv, global_mean_pool, global_max_pool)
 
     
 # TGNN Model
@@ -17,7 +17,6 @@ class GraphClassifier(nn.Module):
         self.edge_mlp = nn.Sequential(
             nn.Linear(edge_feat_dim, 512),
             nn.ReLU(),
-            nn.Dropout(0.5),
             nn.Linear(512, feat_dim)
         )
 
@@ -26,6 +25,8 @@ class GraphClassifier(nn.Module):
             nn.Linear(in_channels, 512),
             nn.ReLU(),
             nn.Dropout(0.5),
+            nn.Linear(512, 512),
+            nn.ReLU(),
             nn.Linear(512, feat_dim)
         )
 

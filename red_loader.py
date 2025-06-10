@@ -224,10 +224,10 @@ class R3D_loader:
         cols = np.asarray(pcd.colors)
 
         # select only 1000 points for logging
-        if len(pts) > 50000:
-            idx = np.random.choice(len(pts), 50000, replace=False)
-            pts = pts[idx]
-            cols = cols[idx]
+        # if len(pts) > 50000:
+        #     idx = np.random.choice(len(pts), 50000, replace=False)
+        #     pts = pts[idx]
+        #     cols = cols[idx]
 
         return pts, cols
 

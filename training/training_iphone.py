@@ -77,16 +77,38 @@ def train_fn(model, train_loader, optimizer, criterion, device, mapping_vn2act):
         batch = batch.to(device)
         optimizer.zero_grad()
 
+        # for key in batch.x_dict.keys():
+        #     if 'object' in key:
+        #         noise_std = 0.5
+        #         batch.x_dict[key] = batch.x_dict[key] + torch.randn_like(batch.x_dict[key]) * noise_std
+
+
         out = model(batch.x_dict, batch.edge_index_dict, 
                     {'relation': batch['object', 'relation', 'object'].edge_attr}, 
                     batch)
 
         loss = criterion(out, batch.y)
+
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
         total_loss += loss.item()
         total_samples += batch.y.size(0)
+
+        # Compute and print the maximum gradient norm for the model parameters
+        # max_grad_norm = 0
+        # total_grad_norm = 0
+        # count_grad = 0
+        # for param in model.parameters():
+        #     if param.grad is not None:
+        #         grad_norm = param.grad.data.norm(2).item()
+        #         total_grad_norm += grad_norm
+        #         count_grad += 1
+        #         if grad_norm > max_grad_norm:
+        #             max_grad_norm = grad_norm
+        # mean_grad_norm = total_grad_norm / count_grad if count_grad > 0 else 0
+        # print(f"Max gradient norm: {max_grad_norm:.4f} | Mean gradient norm: {mean_grad_norm:.4f}")
 
         # Decode verbs and nouns
         preds = out.argmax(dim=1)
@@ -178,6 +200,8 @@ def eval_fn(model, val_loader, criterion, device, mapping_vn2act):
             preds = out.argmax(dim=1)
             for pred_idx, true_vec in zip(preds.cpu().numpy(), batch.y.cpu().numpy()):
                 true_idx = true_vec.argmax()
+                # print("True idx: ", true_idx)
+                # print("Pred idx", pred_idx)
                 pred_verb = mapping_act2v[pred_idx]
                 pred_noun = mapping_act2n[pred_idx]
                 true_verb = mapping_act2v[true_idx]

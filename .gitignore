@@ -7,4 +7,5 @@ __pycache__
 conf/checkpoints
 recordings
 graph_samples
+temp
 wandb

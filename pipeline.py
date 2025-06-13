@@ -9,6 +9,7 @@ import datetime, os
 import time
 
 from video_loader import VideoLoader
+from vrs_loader import VRSLoader
 from hand_detection_hamer import HandDetection
 from segmentation import Segmentation
 from graph_generator import GraphGenerator
@@ -18,6 +19,7 @@ from training_generator import TrainingGenerator
 
 from scipy.spatial.transform import Rotation
 import torch
+import gc
 # ──────────── CONFIGURE SEGMENT OUTPUT ────────────
 
 def main(cfg, start_rerun: bool = False):
@@ -25,13 +27,18 @@ def main(cfg, start_rerun: bool = False):
     # do not record the rerun if start_rerun is False
     # clear the rerun log if start_rerun is True
 
-    rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
 
     #ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     #rec_path = os.path.join("/workspace", f"video_stream_{ts}.rrd")
     #rr.save(rec_path)                     # write to disk while logging 🡅
 
-    video_loader = R3D_loader(cfg.video)
+    if cfg.dataset == "red":
+        video_loader = R3D_loader(cfg.video)
+        rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
+
+    elif cfg.dataset == "hd_epic":
+        video_loader = VRSLoader(cfg.vrs_loader)
+        rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP)
 
     # hand detection
     hand_detection = HandDetection(cfg.hand_detection_hamer)
@@ -45,6 +52,8 @@ def main(cfg, start_rerun: bool = False):
 
     # training generator
     training_generator = TrainingGenerator(cfg)
+    if cfg.dataset == "hd_epic":
+        training_generator.set_sample_dir(video_loader.get_folder_suffix())
 
     # ---- Reduce to ~10 FPS ----
     last_process_ts = -float('inf')
@@ -187,6 +196,12 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Run the video processing pipeline.")
     parser.add_argument(
+        "--dataset",
+        type=str,
+        default="red",
+        help="Path to the configuration file.",
+    )
+    parser.add_argument(
         "--full",
         action="store_true",
         default=False,
@@ -195,57 +210,109 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.full:
+    if args.dataset == "red":
+        if args.full:
 
-        # find all the folder in the videos directory
-        train_path = "dataset/recordings/train"
-        val_path = "dataset/recordings/val"
+            # find all the folder in the videos directory
+            train_path = "dataset/recordings/train"
+            val_path = "dataset/recordings/val"
 
-        train_folders = []
-        for folder in os.listdir(train_path):
-            train_folders.append(os.path.join(train_path, folder))
+            train_folders = []
+            for folder in os.listdir(train_path):
+                train_folders.append(os.path.join(train_path, folder))
 
-        val_folders = []
-        for folder in os.listdir(val_path):
-            val_folders.append(os.path.join(val_path, folder))
+            val_folders = []
+            for folder in os.listdir(val_path):
+                val_folders.append(os.path.join(val_path, folder))
 
-        print("Train folders:", train_folders)
-        print("Val folders:", val_folders)
-        # get the config from hydra
-        from hydra.utils import instantiate
-        from omegaconf import OmegaConf
-        from hydra import compose, initialize
-        with initialize(config_path="conf", version_base=None):
-            cfg = compose(config_name="config")
+            print("Train folders:", train_folders)
+            print("Val folders:", val_folders)
+            # get the config from hydra
+            from hydra.utils import instantiate
+            from omegaconf import OmegaConf
+            from hydra import compose, initialize
+            with initialize(config_path="conf", version_base=None):
+                cfg = compose(config_name="config")
 
-            # create a randoom folder in dataset/graph_samplesXXXXX
-            cfg.training_generator.path = f"dataset/graph_samples{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                # create a randoom folder in dataset/graph_samplesXXXXX
+                cfg.training_generator.path = f"dataset/graph_samples{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-            # first process the training videos
-            for folder in train_folders:
-                cfg.video.path = folder
-                print(f"Processing training folder: {folder}")
-                main(cfg=cfg)
-                rr.Clear(recursive=True)
-                # empty the cuda cache and free up cuda memory
-                torch.cuda.empty_cache()
+                # first process the training videos
+                for folder in train_folders:
+                    cfg.video.path = folder
+                    print(f"Processing training folder: {folder}")
+                    main(cfg=cfg)
+                    rr.Clear(recursive=True)
+                    # empty the cuda cache and free up cuda memory
+                    torch.cuda.empty_cache()
 
 
 
-            # then process the validation videos
-            for folder in val_folders:
-                cfg.video.path = folder
-                print(f"Processing validation folder: {folder}")
-    
-    else:
-        # Run the pipeline on a single video diectly from the config
-        from hydra import compose, initialize
-        with initialize(config_path="conf", version_base=None):
-            rr.init("video_stream", spawn=True)  # spawn=True ⇒ open viewer
-            rr.serve_web_viewer(open_browser=False)
+                # then process the validation videos
+                for folder in val_folders:
+                    cfg.video.path = folder
+                    print(f"Processing validation folder: {folder}")
+        
+        else:
+            # Run the pipeline on a single video diectly from the config
+            from hydra import compose, initialize
+            with initialize(config_path="conf", version_base=None):
+                rr.init("video_stream", spawn=True)  # spawn=True ⇒ open viewer
+                rr.serve_web_viewer(open_browser=False)
 
-            cfg = compose(config_name="config")
-            main(cfg, start_rerun=True)
-    
+                cfg = compose(config_name="config")
+                cfg.dataset = "red"
+                main(cfg, start_rerun=True)
+
+    elif args.dataset == "hd_epic":
+        if args.full:
+            # find all the folder in the videos directory
+            train_path = "dataset/HD-EPIC/VRS/"
+
+            train_folders = []
+            for folder in os.listdir(train_path):
+                train_folders.append(os.path.join(train_path, folder))
+
+
+            print("Train folders:", train_folders)
+            # get the config from hydra
+            from hydra.utils import instantiate
+            from omegaconf import OmegaConf
+            from hydra import compose, initialize
+            with initialize(config_path="conf", version_base=None):
+                cfg = compose(config_name="config")
+
+                # create a randoom folder in dataset/graph_samplesXXXXX
+                cfg.training_generator.path = f"dataset/graph_samples{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+                # first process the training videos
+                for folder in train_folders:
+                    for vrs_file in os.listdir(folder):
+                        if not vrs_file.endswith(".vrs"):
+                            print(f"Skipping non-vrs file: {vrs_file}")
+
+                        cfg.dataset = "hd_epic"
+                        cfg.vrs_loader.path = os.path.join(folder, vrs_file)
+                        print(f"Processing training folder: {cfg.vrs_loader.path}")
+                        # rr.init("video_stream", spawn=True)  # spawn=True ⇒ open viewer
+
+                        main(cfg, start_rerun=False)
+
+                        rr.Clear(recursive=True)
+                        # empty the cuda cache and free up cuda memory
+                        torch.cuda.empty_cache()
+                        gc.collect()
+
+        
+        else:
+            # Run the pipeline on a single video diectly from the config
+            from hydra import compose, initialize
+            with initialize(config_path="conf", version_base=None):
+                rr.init("video_stream", spawn=True)  # spawn=True ⇒ open viewer
+                rr.serve_web_viewer(open_browser=False)
+
+                cfg = compose(config_name="config")
+                cfg.dataset = "hd_epic"
+                main(cfg, start_rerun=True)
 
 

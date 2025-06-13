@@ -258,7 +258,7 @@ def main(args):
 
     print(f"Num actions: {len(mapping_vn2act)}")
 
-    model = GraphClassifier(3072, 64, 4, len(mapping_vn2act)).to(device)
+    model = GraphClassifier(512, 64, 4, len(mapping_vn2act)).to(device)
     optimizer = optim.Adam(model.parameters(), lr=LR)
     criterion = nn.CrossEntropyLoss()
 

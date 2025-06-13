@@ -238,7 +238,7 @@ class Segmentation:
             embedding  = self.object_embedding_generator.generate_embedding(image, segm)
         
 
-            obb = pcd_o3d.get_oriented_bounding_box()
+            obb = pcd_o3d.get_oriented_bounding_box(robust=True)
 
             obj = Object(name, centroid, bbox, segm, pcd=pcd_segment, obb=obb, embedding=embedding)
             self.objects.append(obj)

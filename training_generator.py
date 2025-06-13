@@ -34,6 +34,7 @@ class TrainingGenerator():
         now = datetime.now()
         cfg.training_generator.path
         root_dir = f"{cfg.training_generator.path}"
+        self.root_dir = root_dir
         # add date and time to the directory name
 
         source = cfg.video.path
@@ -52,6 +53,11 @@ class TrainingGenerator():
         os.makedirs(self.sample_dir, exist_ok=True)
 
         self.sequence_count = 0
+
+
+    def set_sample_dir(self, name):
+        self.sample_dir = self.root_dir + "/" + name
+        os.makedirs(self.sample_dir, exist_ok=True)
 
 
     def add_sequence(self, image, graph):

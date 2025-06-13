@@ -1,5 +1,12 @@
+dataset: hd_epic
+
 video:
-  path: dataset/recordings/train/01
+  path: dataset/recordings/train/07
+
+vrs_loader:
+  ml_depth_pro_checkpoint_uri: conf/checkpoints/depthpro/depth_pro.pt
+  vrs_slam_mapping_json: dataset/HD-EPIC/SLAM-and-Gaze/
+  path: dataset/HD-EPIC/VRS/P01/P01-20240202-161354_anonymized.vrs
 
 hand_detection_mediapipe:
   model_path: conf/checkpoints/mediapipe/hand_landmarker.task

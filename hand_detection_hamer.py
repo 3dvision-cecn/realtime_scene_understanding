@@ -29,7 +29,7 @@ class HandDetection:
         self.cfg = cfg
         self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
         self.model, self.model_cfg = load_hamer(cfg.checkpoint)
-        self.model = self.model.to(self.device)
+        self.model = self.model.to("cpu")
         self.model.eval()
 
         if cfg.body_detector == 'vitdet':

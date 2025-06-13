@@ -64,6 +64,9 @@ def main(cfg, start_rerun: bool = False):
     if cfg.pipeline.record_seg:
         os.makedirs(SEGMENT_OUTPUT_DIR, exist_ok=True)
 
+    testing_count = 5
+
+
     itr = 0
     # processing loop
     while True:
@@ -73,6 +76,10 @@ def main(cfg, start_rerun: bool = False):
 
         if frame_rgb is None or depth is None or pose is None:
             print("No more frames available, exiting.")
+            break
+
+        if itr > testing_count:
+            print("testing finished")
             break
 
         pixel_indexed_pcd = video_loader.generate_pixel_indexed_pcd(frame_rgb, depth, pose)

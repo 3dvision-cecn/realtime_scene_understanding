@@ -2,13 +2,11 @@ from collections import OrderedDict
 import numpy as np
 import torch
 import torch.nn.functional as F
-import avion.models.model_clip as model_clip
-from avion.models.utils import inflate_positional_embeds
-from avion.utils.misc import generate_label_map
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import os
+
 
 import orjson, pathlib
 import json as js

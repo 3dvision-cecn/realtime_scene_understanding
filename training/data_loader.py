@@ -10,6 +10,7 @@ import itertools
 import collections
 import networkx as nx
 import numpy as np
+import random
 
 def verify_hypergraph(data: 'HeteroData'):
     """
@@ -23,32 +24,37 @@ def verify_hypergraph(data: 'HeteroData'):
     temp_e     = data['object', 'temporal', 'object'].edge_index.size(1)
     frames     = data['object'].frame_id.unique().tolist()
 
-    print("🔎  GRAPH SUMMARY")
-    print(f"• nodes:            {num_nodes}")
-    print(f"• relation edges:   {rel_e}")
-    print(f"• temporal edges:   {temp_e}")
-    print(f"• frames present:   {frames}")
+    # print("🔎  GRAPH SUMMARY")
+    # print(f"• nodes:            {num_nodes}")
+    # print(f"• relation edges:   {rel_e}")
+    # print(f"• temporal edges:   {temp_e}")
+    # print(f"• frames present:   {frames}")
 
     # label histogram
     label_vec = data['object'].label
     hist = collections.Counter(label_vec.tolist())
-    print("• label histogram:")
-    for lab, cnt in sorted(hist.items()):
-        print(f"    label {lab}: {cnt}")
-    print()
+    # print("• label histogram:")
+    # for lab, cnt in sorted(hist.items()):
+    #     print(f"    label {lab}: {cnt}")
+    # print()
 
     # --- consistency checks ---------------------------------------
     src, dst = data['object', 'temporal', 'object'].edge_index
     assert (label_vec[src] == label_vec[dst]).all(), "Temporal edge joins different labels!"
     assert (data['object'].frame_id[src] < data['object'].frame_id[dst]).all(), \
            "Temporal edge points backward in time!"
-    print("✅  all basic checks passed")
+    # print("✅  all basic checks passed")
 
     # peek first few temporal edges
-    print("\nFirst 10 temporal edges:")
-    for s, d in zip(src[:10].tolist(), dst[:10].tolist()):
-        print(f"  {s:>4} (f{data['object'].frame_id[s].item():02d}, L{label_vec[s].item()})"
-              f" → {d:>4} (f{data['object'].frame_id[d].item():02d}, L{label_vec[d].item()})")
+    # print("\nFirst 10 temporal edges:")
+    # for s, d in zip(src[:10].tolist(), dst[:10].tolist()):
+    #     print(f"  {s:>4} (f{data['object'].frame_id[s].item():02d}, L{label_vec[s].item()})"
+    #           f" → {d:>4} (f{data['object'].frame_id[d].item():02d}, L{label_vec[d].item()})")
+
+    if len(frames) > 0:
+        return True
+    else:
+        return False
 
 
 class GraphDataset(Dataset):
@@ -61,14 +67,12 @@ class GraphDataset(Dataset):
         graph_file_count = 0
         self.filenames_list = []
         print(f"Loading graph dataset from {self.data_dir}")
-        for _, dirnames, _ in os.walk(self.data_dir):
-            # look at all the directories
-            for dirname in dirnames:
-                for dirpath, _, filenames in os.walk(os.path.join(self.data_dir, dirname)):
-                    for filename in filenames:
-                        if ".h5" in filename:
-                            graph_file_count += 1
-                            self.filenames_list.append(os.path.join(dirpath, filename))
+        for root, _, files in os.walk(self.data_dir):
+            for file in files:
+                if file.endswith(".h5"):
+                    file_path = os.path.join(root, file)
+                    self.filenames_list.append(file_path)
+                    graph_file_count += 1
         print(f"Found {graph_file_count} graph files in {self.data_dir}")
 
 
@@ -178,6 +182,12 @@ class GraphDataset(Dataset):
 
         # 2.  Stack everything into tensors
         # ------------------------------------------------------------------
+        if len(node_feats) == 0:
+            new_id = idx+1
+            print("found empty graph at idx: ", idx)
+            return self.__getitem__(new_id)
+
+
         x           = torch.cat(node_feats, dim=0)                       # (ΣN,384)
         pos_all     = torch.cat(node_pos,   dim=0) 
         labels_all = torch.cat(node_labels, dim=0) 
@@ -245,6 +255,5 @@ class GraphDataset(Dataset):
         zeros[label] = 1.0
         data.y = zeros.unsqueeze(0)
 
-        # verify_hypergraph(data)
 
         return data

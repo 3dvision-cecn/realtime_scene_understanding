@@ -160,9 +160,12 @@ class VRSLoader:
         )
 
         # Compute the actual undistorted image (pixel sampling by using ray projection/reprojection)
-        undistorted_image = distort_by_calibration(
-            image_tuple[0].to_numpy_array(), pinhole_calib, camera_calibration
-        )
+        try:
+            undistorted_image = distort_by_calibration(
+                image_tuple[0].to_numpy_array(), pinhole_calib, camera_calibration
+            )
+        except:
+            return None, None
 
         return undistorted_image, image_tuple[1].capture_timestamp_ns
 
@@ -268,6 +271,20 @@ class VRSLoader:
             return None, None, None, None
 
         raw_image, timestamp_ns = self.get_undistorted_image(self.rgb_stream_id, self.idx)
+
+        if raw_image is None:
+            print("starting to look for valid sequence")
+            for i in range(self.idx, self.num_images):
+                raw_image, timestamp_ns = self.get_undistorted_image(self.rgb_stream_id, i)
+                if raw_image is not None:
+                    print("found valid id", i)
+                    self.idx = i
+                    break
+            if raw_image is None:
+                return None, None, None, None
+
+
+
         # crop the borders by 50 pixels
         cropped_image = raw_image[self.crop_size:-self.crop_size, self.crop_size:-self.crop_size]
 

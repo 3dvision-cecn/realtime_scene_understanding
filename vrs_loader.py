@@ -406,6 +406,8 @@ class VRSLoader:
 
         raw_image, timestamp_ns = self.get_undistorted_image(self.rgb_stream_id, self.idx)
 
+        
+
         if raw_image is None:
             print("starting to look for valid sequence")
             for i in range(self.idx, self.num_images):
@@ -417,7 +419,6 @@ class VRSLoader:
             if raw_image is None:
                 return None, None, None, None
             
-
         # check the blur
         blur_metric = cv2.Laplacian(raw_image, cv2.CV_64F).var()
         if blur_metric < self.blur_threshold:
@@ -478,13 +479,32 @@ class VRSLoader:
                 if np.isnan(current) or depth_val < current:
                     pseudo_depth[v, u] = depth_val
         print(f"Created pseudo depth: max {np.nanmax(pseudo_depth):.2f}, min {np.nanmin(pseudo_depth):.2f}, valid {np.sum(~np.isnan(pseudo_depth))}")
-        self.pseudo_depth = pseudo_depth
 
         psuedo_depth_zero = np.nan_to_num(pseudo_depth, nan=0)
         with torch.autocast(self.device, torch.bfloat16):
             depth = self.omni_dcnet(cropped_image, psuedo_depth_zero)
 
         self.idx += self.decimation_factor  # skip some frames to reduce the number of frames processed
+
+        # rotate the image and depth by 90 degrees clockwise
+        cropped_image = cv2.rotate(cropped_image, cv2.ROTATE_90_CLOCKWISE)
+        depth = cv2.rotate(depth, cv2.ROTATE_90_CLOCKWISE)
+        pseudo_depth = cv2.rotate(pseudo_depth, cv2.ROTATE_90_CLOCKWISE)
+        self.pseudo_depth = pseudo_depth
+
+        # apply 90 degree rotation to compansate for the image rotation
+        # compensate for the 90° CW rotation we applied to the image:
+        R_z_cw = np.array([
+            [ 0,  1, 0, 0],
+            [-1,  0, 0, 0],
+            [ 0,  0, 1, 0],
+            [ 0,  0, 0, 1],
+        ], dtype=np.float32)
+
+        # apply the rotation to both the camera and device transforms
+        T_world_camera = T_world_camera @ R_z_cw
+        T_world_device = T_world_device @ R_z_cw
+
         return cropped_image, depth, T_world_camera, timestamp_ns / 1000_000  # convert to ms
     
 
@@ -573,7 +593,6 @@ if __name__ == "__main__":
 
     rr.init("Aria Glasses", spawn=True)
     rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP)
-    rr.log("world/keypoints", rr.Points3D(vrs_loader.points_position, colors=[255, 0, 0], radii=0.001), static=True)
 
     while True:
         cropped_image, depth, T_wc, timestamp_ns = vrs_loader.next_frame()
@@ -609,17 +628,3 @@ if __name__ == "__main__":
         pts, col = vrs_loader.generate_pcd(cropped_image, depth, T_wc)
 
         rr.log("world/point_cloud", rr.Points3D(pts, colors=col))
-
-
-        # log the palm and wrist pose
-        hand = vrs_loader.hand
-        if hand is not None:
-            if hand["left_palm"] is not None:
-                rr.log("world/left_palm", rr.Points3D(hand["left_palm"], colors=[0, 255, 0], radii=0.05))
-            if hand["left_wrist"] is not None:
-                rr.log("world/left_wrist", rr.Points3D(hand["left_wrist"], colors=[0, 255, 0], radii=0.05))
-            if hand["right_palm"] is not None:
-                rr.log("world/right_palm", rr.Points3D(hand["right_palm"], colors=[255, 0, 0], radii=0.05))
-            if hand["right_wrist"] is not None:
-                rr.log("world/right_wrist", rr.Points3D(hand["right_wrist"], colors=[255, 0, 0], radii=0.05))
-

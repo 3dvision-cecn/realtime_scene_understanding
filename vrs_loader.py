@@ -20,25 +20,29 @@ from projectaria_tools.core.calibration import (
     distort_by_calibration,
 )
 from projectaria_tools.core import calibration
+from points_and_observation_manager import PointsAndObservationsManager, OnlineRgbCameraHelper
+from datetime import timedelta
 
 # depth estimate
 import depth_pro
 from depth_pro.depth_pro import DEFAULT_MONODEPTH_CONFIG_DICT
+import zipfile
+import shutil
+from omni_dc.omni_dc_wrapper import DepthPredictor
 
-
-
-
-
-
-
-
+LEFT_SLAM_STREAM_ID = StreamId("1201-1")
+RIGHT_SLAM_STREAM_ID = StreamId("1201-2")
 
 class VRSLoader:
-    def __init__(self, cfg):
+    def __init__(self, cfg, device):
         self.cfg = cfg
+        self.device = device
         # this is the path to the VRS data
         self.vrs_path = cfg.path
         self.ego_exo_project_path = os.path.dirname(self.vrs_path)
+
+        print("VRs path", self.vrs_path)
+        print("Device is", device)
 
         # get which P01, P02, etc. this is
         self.person_id = os.path.basename(os.path.dirname(self.vrs_path))
@@ -47,6 +51,7 @@ class VRSLoader:
         self.vrs_slam_mapping_json = self.cfg.vrs_slam_mapping_json + self.person_id +"/SLAM/multi/vrs_to_multi_slam.json"
         if not os.path.exists(self.vrs_slam_mapping_json):
             raise ValueError(f"VRS SLAM mapping JSON file does not exist: {self.vrs_slam_mapping_json}")
+        
         
         with open(self.vrs_slam_mapping_json, 'r') as f:
             self.vrs_slam_mapping = json.load(f)
@@ -69,7 +74,47 @@ class VRSLoader:
         self.slam_root_dir = os.path.dirname(self.vrs_slam_mapping_json)
         self.slam_dir = os.path.join(self.slam_root_dir, self.slam_name)
 
+        # if slamdir does not exist but there is a zip file instead unzip and use that
+        self.unzipped = False
+        if not os.path.exists(self.slam_dir):
+            zip_path = self.slam_dir + ".zip"
+            if os.path.exists(zip_path):
+                print(f"Slam directory not found. Extracting from {zip_path}...")
+                with zipfile.ZipFile(zip_path, "r") as zf:
+                    zf.extractall(self.slam_root_dir)
+                self.unzipped = True
+                print(f"Extraction complete. Slam directory available at {self.slam_dir}")
+            else:
+                raise ValueError(f"Slam directory does not exist and no zip file found at: {zip_path}")
+            
+        # HAND TRACKING
 
+        # base_name = os.path.splitext(os.path.basename(self.project_name))[0]
+        # self.hand_tracking_folder = self.cfg.vrs_slam_mapping_json + self.person_id + "/GAZE_HAND/" + "mps_" + base_name + "_vrs.zip"
+        # self.hand_tracking_folder_unzipped = self.cfg.vrs_slam_mapping_json + self.person_id + "/GAZE_HAND/" + "mps_" + base_name + "_vrs"
+
+        # # Check if the hand‐tracking zip exists
+        # if os.path.isfile(self.hand_tracking_folder):
+        #     # Compute extraction directory (remove .zip suffix)
+        #     self.extract_dir = os.path.dirname(self.hand_tracking_folder) 
+        #     # Make sure it exists
+        #     os.makedirs(self.extract_dir, exist_ok=True)
+        #     # Extract all files
+        #     with zipfile.ZipFile(self.hand_tracking_folder, "r") as zf:
+        #         zf.extractall(self.extract_dir)
+        #     # Update the folder path to the extracted directory
+        #     self.hand_tracking_folder = self.extract_dir
+        #     print(f"Extracted hand‐tracking data to {self.extract_dir}")
+
+        # self.hand_tracking_result_path = self.hand_tracking_folder_unzipped + "/hand_tracking/wrist_and_palm_poses.csv"
+
+        # self.hand_tracking_results = mps.hand_tracking.read_wrist_and_palm_poses(
+        #     self.hand_tracking_result_path
+        # )
+
+        # print(f"Number of hand tracking results: {len(self.hand_tracking_results)}")
+
+        
         # paramters
         self.time_domain = TimeDomain.DEVICE_TIME  # query data based on host time
         self.option = TimeQueryOptions.CLOSEST # get data whose time [in TimeDomain] is CLOSEST to query time
@@ -77,7 +122,7 @@ class VRSLoader:
         self.threshold_dep = 5e-4
         self.max_points_per_pcd = 500_000  # maximum number of points per point cloud
         self.crop_size = 60  # crop the image by this many pixels on each side
-        self.blur_threshold = 20.0 # threshold for skipping due to blur
+        self.blur_threshold = 18.0 # threshold for skipping due to blur
         self.decimation_factor = 8  # decimation factor for the point cloud
 
         # get the vrs data
@@ -106,30 +151,53 @@ class VRSLoader:
         trajectory_data = mps.read_closed_loop_trajectory(mps_data_paths.slam.closed_loop_trajectory)
 
         self.device_trajectory = [it.transform_world_device.translation()[0] for it in trajectory_data][0::80]
-        point_cloud = self.mps_data_provider.get_semidense_point_cloud()
+        self.point_cloud = self.mps_data_provider.get_semidense_point_cloud()
+        # self.point_observations = self.mps_data_provider.get_semidense_observations()
+
+        # get directly from camera visible keypoints
+        self.points_and_observations_manager = PointsAndObservationsManager.from_mps_data_provider(
+            self.mps_data_provider
+        )
+        self.camera_serial_left_slam = (
+            self.vrs_data_provider.get_configuration(LEFT_SLAM_STREAM_ID)
+            .image_configuration()
+            .sensor_serial
+        )
+        self.camera_serial_right_slam = (
+            self.vrs_data_provider.get_configuration(LEFT_SLAM_STREAM_ID)
+            .image_configuration()
+            .sensor_serial
+        )
+
 
         # filter the pointcloud
-        filtered_point_cloud = filter_points_from_confidence(point_cloud, self.threshold_invdep, self.threshold_dep)
-        downsampled_points_cloud = filter_points_from_count(filtered_point_cloud, self.max_points_per_pcd)
+        # filtered_point_cloud = filter_points_from_confidence(self.point_cloud, self.threshold_invdep, self.threshold_dep)
+        # downsampled_points_cloud = filter_points_from_count(filtered_point_cloud, self.max_points_per_pcd)
         # Retrieve point positions
-        self.points_position = np.stack([it.position_world for it in downsampled_points_cloud])
-        N = self.points_position.shape[0]
-        self.points_world_h = np.hstack([self.points_position, np.ones((N, 1), dtype=np.float32)])  # (N,4)
+        # self.points_position = np.stack([it.position_world for it in downsampled_points_cloud])
+        # N = self.points_position.shape[0]
+        # self.points_world_h = np.hstack([self.points_position, np.ones((N, 1), dtype=np.float32)])  # (N,4)
 
         print(f"VRS data loaded from {self.vrs_path}")
         print(f"Number of images in the VRS data: {self.num_images}")
         print(f"Start time: {self.start_time}, End time: {self.end_time}")
-        print(f"Point cloud contains {len(self.points_position)} points")
+        # print(f"Point cloud contains {len(self.points_position)} points")
 
 
+        self.omni_dcnet = DepthPredictor(checkpoint_path="conf/checkpoints/omni_dc/modelv1.1_best_72epochs.pt",
+                                          da_path="conf/checkpoints/omni_dc/depth_anything_v2_vitl.pth",
+                                          device=self.device)
 
-        # depth esimation ml depth pro model
-        depth_pro_config = DEFAULT_MONODEPTH_CONFIG_DICT
-        depth_pro_config.checkpoint_uri = self.cfg.ml_depth_pro_checkpoint_uri
-        self.model_depth_pro, self.transform_depth_pro = depth_pro.create_model_and_transforms(device="cpu")
-        self.model_depth_pro.eval().to(torch.bfloat16).to(device="cuda")
+
+        print("Finished loading the depth pro file")
+
+        if self.unzipped:
+            print(f"Unzipped slam data is no longer needed, deleting {self.slam_dir}...")
+            shutil.rmtree(self.slam_dir)
 
         self.idx = 0  # index for the next frame to be processed
+
+        print("Finished the vrs loader")
 
 
 
@@ -143,6 +211,72 @@ class VRSLoader:
     def get_folder_suffix(self) -> str:
         # Get the folder suffix to save the results
         return self.person_id + "/" + self.slam_name
+    
+
+
+
+    def get_palm_and_wrist_pose(self, time_ns: int):
+        # tolerance of 100 milliseconds in nanoseconds
+        tol_us = 1000 * 1e3 # has to be high otherise they are not alligned at least we get some tracking this way
+        time_us = time_ns * 1e-3
+        # find the hand‐tracking result with the smallest time difference
+        best = min(
+            self.hand_tracking_results,
+            key=lambda r: abs(r.tracking_timestamp - timedelta(microseconds=time_us))
+        )
+        # Check if the closest timestamp is within tolerance using timedelta
+        if abs(best.tracking_timestamp - timedelta(microseconds=time_us)) > timedelta(microseconds=tol_us):
+            print(f"No valid hand tracking result found, best timedelta {best.tracking_timestamp - timedelta(microseconds=time_us).microseconds * 1e3} ms")
+            return None, None
+        # return (palm_pose, wrist_pose)
+        print(f"Valid hand tracking recors is found, best timedelta {(best.tracking_timestamp - timedelta(microseconds=time_us)).microseconds * 1e-3} ms")
+        return best
+    
+
+    def get_hand_positions_in_world(self, hand, T_world_device: np.ndarray):
+        # return the latest hand positions in world coordinates
+        if hand is not None:
+            left_hand = hand.left_hand
+            right_hand = hand.right_hand
+
+            if left_hand is not None:
+                # check if the confidence is larger than 0.5
+                if left_hand.confidence > 0.5:
+                    left_palm_pos = T_world_device @ np.append(left_hand.palm_position_device, 1)
+                    left_wrist_pos = T_world_device @ np.append(left_hand.wrist_position_device, 1)
+
+                    left_palm_pos = left_palm_pos[:3]  # remove the homogeneous coordinate
+                    left_wrist_pos = left_wrist_pos[:3]  # remove the homogeneous coordinate
+                else:
+                    left_palm_pos = None
+                    left_wrist_pos = None
+            else:
+                left_palm_pos = None
+                left_wrist_pos = None
+
+
+            if right_hand is not None:
+                # check if the confidence is larger than 0.5
+                if right_hand.confidence > 0.5:
+                    right_palm_pos = T_world_device @ np.append(right_hand.palm_position_device, 1)
+                    right_wrist_pos = T_world_device @ np.append(right_hand.wrist_position_device, 1)
+
+                    right_palm_pos = right_palm_pos[:3]
+                    right_wrist_pos = right_wrist_pos[:3]
+                else:
+                    right_palm_pos = None
+                    right_wrist_pos = None
+            else:
+                right_palm_pos = None
+                right_wrist_pos = None
+
+
+            hand_pos = {}
+            hand_pos["left_palm"] = left_palm_pos
+            hand_pos["left_wrist"] = left_wrist_pos
+            hand_pos["right_palm"] = right_palm_pos
+            hand_pos["right_wrist"] = right_wrist_pos
+            return hand_pos
 
 
     def get_undistorted_image(self, stream_id: StreamId, index: int) -> np.array:
@@ -177,7 +311,7 @@ class VRSLoader:
         T_world_device = pose_info.transform_world_device # _core_pybinds.sophus.SE3
         T_world_camera = T_world_device @ T_device_camera
 
-        return T_world_camera.to_matrix()
+        return T_world_camera.to_matrix(), T_world_device.to_matrix()
     
     def get_focal_lengths(self, stream_id: StreamId) -> tuple:
         camera_calibration = self.get_camera_calibration(stream_id)
@@ -189,7 +323,7 @@ class VRSLoader:
     def get_depth_estimate_ml_pro(self, image):
         f_px = self.get_focal_lengths(self.rgb_stream_id)
 
-        image_transformed = self.transform_depth_pro(image.copy()).to(device="cuda").to(torch.bfloat16)  # Transform the image for Depth Pro model
+        image_transformed = self.transform_depth_pro(image.copy()).to(device=self.device).to(torch.bfloat16)  # Transform the image for Depth Pro model
         prediction = self.model_depth_pro.infer(image_transformed, f_px=f_px)
         depth = prediction["depth"]  # Depth in [m].
         depth = depth.squeeze().to(torch.float32).cpu().numpy()  # Remove batch dimension and move to CPU
@@ -282,11 +416,7 @@ class VRSLoader:
                     break
             if raw_image is None:
                 return None, None, None, None
-
-
-
-        # crop the borders by 50 pixels
-        cropped_image = raw_image[self.crop_size:-self.crop_size, self.crop_size:-self.crop_size]
+            
 
         # check the blur
         blur_metric = cv2.Laplacian(raw_image, cv2.CV_64F).var()
@@ -295,18 +425,64 @@ class VRSLoader:
             self.idx += 1
             return self.next_frame()  # skip this frame
 
+        ############ camera keypoints dynamix
+        frame_set_uids = {}
+        # get the left slam 
+        print(timestamp_ns * 1e-9)
+        uvs, uids = self.points_and_observations_manager.get_slam_observations(timestamp_ns, self.camera_serial_left_slam)
+        frame_set_uids[str(LEFT_SLAM_STREAM_ID)] = uids
+        uvs, uids = self.points_and_observations_manager.get_slam_observations(timestamp_ns, self.camera_serial_right_slam)
+        frame_set_uids[str(RIGHT_SLAM_STREAM_ID)] = uids
+
+        all_uids = set(frame_set_uids[str(LEFT_SLAM_STREAM_ID)]).union(
+            frame_set_uids[str(RIGHT_SLAM_STREAM_ID)]
+        )
+
+        camera_calibration, device_pose = OnlineRgbCameraHelper(
+            self.vrs_data_provider, self.mps_data_provider, timestamp_ns
+        )
+        visible_uvs, uids = self.points_and_observations_manager.get_rgb_observations(
+            all_uids, camera_calibration, device_pose
+        )
+        # apply crop to the visible uvs and their uids
+        # Adjust the visible keypoints for the cropped image.
+        cropped_uvs = []
+        cropped_pos_w = []
+        for uv, uid in zip(visible_uvs, uids):
+            cropped_uv = uv - self.crop_size
+            # Keep only valid keypoints within the cropped image boundaries
+            if (cropped_uv[0] < 0 or cropped_uv[0] >= self.width or
+                cropped_uv[1] < 0 or cropped_uv[1] >= self.height):
+                continue
+            cropped_uvs.append(cropped_uv)
+            cropped_pos_w.append(self.points_and_observations_manager.points[uid].position_world)
+
+        print("valid keypoints:", len(cropped_uvs))
+
+        # crop the borders by 50 pixels
+        cropped_image = raw_image[self.crop_size:-self.crop_size, self.crop_size:-self.crop_size]
+
+
         # get the pose
-        T_world_camera = self.get_pose(timestamp_ns)
+        T_world_camera, T_world_device = self.get_pose(timestamp_ns)
 
-        # get the depth estimate
-        depth_estimate = self.get_depth_estimate_ml_pro(cropped_image)
+        T_cam_world = np.linalg.inv(T_world_camera)
+        pseudo_depth = np.full((self.height, self.width), np.nan, dtype=np.float32)
+        for uv, pos_w in zip(cropped_uvs, cropped_pos_w):
+            pos_w_h = np.append(pos_w, 1)
+            pos_cam = T_cam_world @ pos_w_h
+            depth_val = np.linalg.norm(pos_cam[:3])
+            u, v = int(round(uv[0])), int(round(uv[1]))
+            if 0 <= u < self.width and 0 <= v < self.height:
+                current = pseudo_depth[v, u]
+                if np.isnan(current) or depth_val < current:
+                    pseudo_depth[v, u] = depth_val
+        print(f"Created pseudo depth: max {np.nanmax(pseudo_depth):.2f}, min {np.nanmin(pseudo_depth):.2f}, valid {np.sum(~np.isnan(pseudo_depth))}")
+        self.pseudo_depth = pseudo_depth
 
-        # get the pseudo depth
-        pseudo_depth = self.get_psuedo_depth(T_world_camera)
-        self.pseudo_depth = pseudo_depth  # store for debugging
-
-        # correct the depth estimate with the pseudo depth
-        depth = self.correct_depth_with_psuedo_depth(depth_estimate, pseudo_depth)
+        psuedo_depth_zero = np.nan_to_num(pseudo_depth, nan=0)
+        with torch.autocast(self.device, torch.bfloat16):
+            depth = self.omni_dcnet(cropped_image, psuedo_depth_zero)
 
         self.idx += self.decimation_factor  # skip some frames to reduce the number of frames processed
         return cropped_image, depth, T_world_camera, timestamp_ns / 1000_000  # convert to ms
@@ -392,8 +568,8 @@ if __name__ == "__main__":
         ml_depth_pro_checkpoint_uri: str = "conf/checkpoints/depthpro/depth_pro.pt"
 
 
-    cfg = Config(path="dataset/HD-EPIC/VRS/P01/P01-20240202-161354_anonymized.vrs", vrs_slam_mapping_json="dataset/HD-EPIC/SLAM-and-Gaze/P01/SLAM/multi/vrs_to_multi_slam.json")
-    vrs_loader = VRSLoader(cfg)
+    cfg = Config(path="dataset/HD-EPIC/VRS/P01/P01-20240203-184045_anonymized.vrs", vrs_slam_mapping_json="dataset/HD-EPIC/SLAM-and-Gaze/")
+    vrs_loader = VRSLoader(cfg, device="cuda")
 
     rr.init("Aria Glasses", spawn=True)
     rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP)
@@ -410,6 +586,8 @@ if __name__ == "__main__":
 
         # Log the image
         rr.log("Image", rr.Image(cropped_image))
+
+        
 
         # Log the depth
         normalized_depth = cv2.normalize(depth, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
@@ -433,5 +611,15 @@ if __name__ == "__main__":
         rr.log("world/point_cloud", rr.Points3D(pts, colors=col))
 
 
-
+        # log the palm and wrist pose
+        hand = vrs_loader.hand
+        if hand is not None:
+            if hand["left_palm"] is not None:
+                rr.log("world/left_palm", rr.Points3D(hand["left_palm"], colors=[0, 255, 0], radii=0.05))
+            if hand["left_wrist"] is not None:
+                rr.log("world/left_wrist", rr.Points3D(hand["left_wrist"], colors=[0, 255, 0], radii=0.05))
+            if hand["right_palm"] is not None:
+                rr.log("world/right_palm", rr.Points3D(hand["right_palm"], colors=[255, 0, 0], radii=0.05))
+            if hand["right_wrist"] is not None:
+                rr.log("world/right_wrist", rr.Points3D(hand["right_wrist"], colors=[255, 0, 0], radii=0.05))
 

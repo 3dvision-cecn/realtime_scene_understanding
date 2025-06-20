@@ -56,10 +56,11 @@ class Segmentation:
 
     def __init__(
         self,
-        cfg
+        cfg,
+        device
     ):
         self.cfg = cfg
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = device
         self.imgsz = cfg.imgsz
         self.conf = cfg.conf
         self.iou = cfg.iou
@@ -77,7 +78,7 @@ class Segmentation:
         torch.backends.cudnn.allow_tf32 = True
 
         # ────────────── SAM‑2 predictor (box prompt) ────────────────
-        self.sam_net = build_sam2(cfg.model_cfg, 'conf/' + cfg.model_path, apply_postprocessing=False).to(self.device).eval()
+        self.sam_net = build_sam2(cfg.model_cfg, 'conf/' + cfg.model_path, apply_postprocessing=False, device=self.device).eval()
         # self.sam = SAM2AutomaticMaskGenerator(
         #         self.sam_net,
         #         points_per_side=32,
@@ -87,11 +88,11 @@ class Segmentation:
         #         points_per_batch=256,
         #     )
         # ────────────── YOLOv12 for coarse boxes ────────────────
-        self.yolo = YOLO("yolo12x.pt")  
+        self.yolo = YOLO("yolo12x.pt").to(self.device)
         # ────────────── vlM for zero-shot labels ────────────────
         self.vlm = VLM(device=self.device) 
         # ────────────── Object embedding generator ────────────────
-        self.object_embedding_generator = ObjectEmbeddingGenerator()
+        self.object_embedding_generator = ObjectEmbeddingGenerator(device=self.device)
             
 
 
@@ -131,21 +132,22 @@ class Segmentation:
 
         # give the list of points to the SAM-2 predictor
         t0 = time.time()
-        self.sam = SAM2AutomaticMaskGenerator(
-                self.sam_net,
-                points_per_side=None,
-                point_grids = sam2_points,
-                pred_iou_thresh=0.5,
-                stability_score_thresh=0.9,
-                box_nms_thresh=0.3,
-                min_mask_region_area=300,
-                points_per_batch=256,
-                use_m2m=False,
-            )
-        # bf16 image
-        masks = self.sam.generate(image)
+        with torch.autocast(self.device, torch.bfloat16):
+            self.sam = SAM2AutomaticMaskGenerator(
+                    self.sam_net,
+                    points_per_side=None,
+                    point_grids = sam2_points,
+                    pred_iou_thresh=0.5,
+                    stability_score_thresh=0.9,
+                    box_nms_thresh=0.3,
+                    min_mask_region_area=300,
+                    points_per_batch=256,
+                    use_m2m=False,
+                )
+            # bf16 image
+            masks = self.sam.generate(image)
         t1 = time.time()
-        # print(f"Time taken for SAM-2 segmentation: {t1 - t0:.2f} seconds")
+        print(f"Time taken for SAM-2 segmentation: {t1 - t0:.2f} seconds")
 
         # # visualize the masks on the image
         annotated_img = image.copy()

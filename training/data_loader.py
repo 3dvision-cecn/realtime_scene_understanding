@@ -11,13 +11,15 @@ import collections
 import networkx as nx
 import numpy as np
 import random
+import collections
+import torch
 
 def verify_hypergraph(data: 'HeteroData'):
     """
     Quick integrity / sanity checks for the aggregated graph.
     Prints a readable summary and raises AssertionError on failures.
     """
-    import collections
+
 
     num_nodes  = data['object'].num_nodes
     rel_e      = data['object', 'relation', 'object'].edge_index.size(1)
@@ -58,7 +60,7 @@ def verify_hypergraph(data: 'HeteroData'):
 
 
 class GraphDataset(Dataset):
-    def __init__(self, data_dir, embedder, metadata_csv, mapping_vn2act):
+    def __init__(self, data_dir, embedder, metadata_csv, mapping_vn2act, node_drop_p = 0.0):
 
         self.data_dir = data_dir
         self.embedder = embedder
@@ -69,12 +71,13 @@ class GraphDataset(Dataset):
         print(f"Loading graph dataset from {self.data_dir}")
         for root, _, files in os.walk(self.data_dir):
             for file in files:
+                # print(root + file)
                 if file.endswith(".h5"):
                     file_path = os.path.join(root, file)
                     self.filenames_list.append(file_path)
                     graph_file_count += 1
         print(f"Found {graph_file_count} graph files in {self.data_dir}")
-
+        self.node_drop_p = node_drop_p
 
 
 
@@ -143,8 +146,6 @@ class GraphDataset(Dataset):
             # ---- nodes ----------------------------------------------------
             feats = torch.from_numpy(fr["features"]).float()          # (N,384)
             node_feats.append(feats)
-            feats = torch.from_numpy(fr["features"]).float()          # (N,384)
-            node_feats.append(feats)
 
             pos   = torch.from_numpy(fr["pos"]).float()               # (N,3) ← NEW
             node_pos.append(pos)                                      #        ← NEW
@@ -184,7 +185,6 @@ class GraphDataset(Dataset):
         # ------------------------------------------------------------------
         if len(node_feats) == 0:
             new_id = idx+1
-            print("found empty graph at idx: ", idx)
             return self.__getitem__(new_id)
 
 
@@ -213,10 +213,40 @@ class GraphDataset(Dataset):
             temp_index = torch.empty(2, 0, dtype=torch.long)    
 
 
-
-
         # Create PyG graph
         data = HeteroData()
+
+        # Set a drop probability for nodes (objects)
+        drop_rate = self.node_drop_p
+        num_nodes_total = x.size(0)
+        keep_mask = torch.rand(num_nodes_total) > drop_rate
+
+        # Update node features and attributes
+        x = x[keep_mask]
+        pos_all = pos_all[keep_mask]
+        labels_all = labels_all[keep_mask]
+        orig_ids = orig_ids[keep_mask]
+        frame_ids = frame_ids[keep_mask]
+
+        # Build a mapping from old node indices to new indices
+        old_indices = torch.arange(num_nodes_total)
+        new_indices = -torch.ones(num_nodes_total, dtype=torch.long)
+        new_indices[keep_mask] = torch.arange(keep_mask.sum())
+
+        # Filter in-frame (relation) edges: keep only edges with both endpoints retained
+        rel_src = rel_index[0]
+        rel_dst = rel_index[1]
+        edge_mask = keep_mask[rel_src] & keep_mask[rel_dst]
+        rel_index = torch.stack([new_indices[rel_src[edge_mask]], new_indices[rel_dst[edge_mask]]], dim=0)
+        if rel_attr is not None:
+            rel_attr = rel_attr[edge_mask]
+
+        # Filter temporal edges in the same way
+        if temp_index.size(1) > 0:
+            temp_src = temp_index[0]
+            temp_dst = temp_index[1]
+            temp_mask = keep_mask[temp_src] & keep_mask[temp_dst]
+            temp_index = torch.stack([new_indices[temp_src[temp_mask]], new_indices[temp_dst[temp_mask]]], dim=0)
         
 
         data['object'].x        = x
@@ -226,20 +256,6 @@ class GraphDataset(Dataset):
         data['object'].orig_id  = orig_ids
         data['object'].frame_id = frame_ids
 
-        # augment the rek_index and rel_attr by sampling edges in the other direction as well
-        # augmented_edge_index = torch.zeros((2, rel_index.shape[1] * 2) , dtype=torch.int)
-        # # print("edge index shape:", rel_index.shape)
-        # # print("augmented edge index shape:", augmented_edge_index.shape)
-        # augmented_edge_index[0, :rel_index.shape[1]] = rel_index[0, :]
-        # augmented_edge_index[1, :rel_index.shape[1]] = rel_index[1, :]
-
-        # augmented_edge_index[0, rel_index.shape[1]:] = rel_index[1, :]
-        # augmented_edge_index[1, rel_index.shape[1]:] = rel_index[0, :]
-
-
-
-        # augment the edge features too
-        # augmented_rel_attr = torch.cat((rel_attr, rel_attr), dim=0)
 
         data['object', 'relation', 'object'].edge_index = rel_index
         if rel_attr is not None:
@@ -254,6 +270,5 @@ class GraphDataset(Dataset):
         zeros = torch.zeros((3806,), dtype=torch.float)  
         zeros[label] = 1.0
         data.y = zeros.unsqueeze(0)
-
 
         return data

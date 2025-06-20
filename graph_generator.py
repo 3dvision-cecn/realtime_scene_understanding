@@ -20,8 +20,9 @@ class GraphGenerator:
         • Hand landmarks   (list[(x,y,z)] per hand from MediaPipe)
     """
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, device):
         print("Initializing GraphGenerator with config:", cfg)
+        self.device = device
 
 
 

@@ -8,6 +8,11 @@ from hydra.core.global_hydra import GlobalHydra
 import datetime, os
 import time
 
+from hydra.utils import instantiate
+from omegaconf import OmegaConf
+from hydra import compose, initialize
+
+
 from video_loader import VideoLoader
 from vrs_loader import VRSLoader
 from hand_detection_hamer import HandDetection
@@ -20,9 +25,16 @@ from training_generator import TrainingGenerator
 from scipy.spatial.transform import Rotation
 import torch
 import gc
+
+# multi processing
+import torch.multiprocessing as mp
+
+
+
+
 # ──────────── CONFIGURE SEGMENT OUTPUT ────────────
 
-def main(cfg, start_rerun: bool = False):
+def main(cfg, start_rerun: bool = False, device = "cuda"):
     # disable rerun's default logging
     # do not record the rerun if start_rerun is False
     # clear the rerun log if start_rerun is True
@@ -33,25 +45,25 @@ def main(cfg, start_rerun: bool = False):
     #rr.save(rec_path)                     # write to disk while logging 🡅
 
     if cfg.dataset == "red":
-        video_loader = R3D_loader(cfg.video)
+        video_loader = R3D_loader(cfg.video, device)
         rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
 
     elif cfg.dataset == "hd_epic":
-        video_loader = VRSLoader(cfg.vrs_loader)
+        video_loader = VRSLoader(cfg.vrs_loader, device=device)
         rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP)
 
     # hand detection
-    hand_detection = HandDetection(cfg.hand_detection_hamer)
+    hand_detection = HandDetection(cfg.hand_detection_hamer, device=device)
     # hand_detection = YoloHandDetection(cfg.hand_detection_yolo)
 
     # segmentation
-    segmentation = Segmentation(cfg.segmentation)
+    segmentation = Segmentation(cfg.segmentation, device=device)
 
     # graph generator
-    graph_generator = GraphGenerator(cfg.graph_generator)
+    graph_generator = GraphGenerator(cfg.graph_generator, device=device)
 
     # training generator
-    training_generator = TrainingGenerator(cfg)
+    training_generator = TrainingGenerator(cfg, device=device)
     if cfg.dataset == "hd_epic":
         training_generator.set_sample_dir(video_loader.get_folder_suffix())
 
@@ -64,8 +76,6 @@ def main(cfg, start_rerun: bool = False):
     if cfg.pipeline.record_seg:
         os.makedirs(SEGMENT_OUTPUT_DIR, exist_ok=True)
 
-    testing_count = 5
-
 
     itr = 0
     # processing loop
@@ -73,24 +83,19 @@ def main(cfg, start_rerun: bool = False):
         itr+=1
         start_time = time.perf_counter()
         frame_rgb, depth, pose, timestamp = video_loader.next_frame()
+        load_time = time.perf_counter() - start_time
+        print(f"Frame load time: {load_time:.3f} seconds")
 
         if frame_rgb is None or depth is None or pose is None:
             print("No more frames available, exiting.")
             break
 
-        if itr > testing_count:
-            print("testing finished")
-            break
 
         pixel_indexed_pcd = video_loader.generate_pixel_indexed_pcd(frame_rgb, depth, pose)
         if pixel_indexed_pcd is None:
             print("No pixel indexed point cloud available, skipping frame.")
             continue
 
-        # only process at target FPS
-        if timestamp - last_process_ts < target_interval:
-            continue
-        last_process_ts = timestamp
 
         # Tag this log with an integer timeline for easy scrubbing
         rr.set_time("time", duration=timestamp)
@@ -120,6 +125,8 @@ def main(cfg, start_rerun: bool = False):
             img, pixel_indexed_pcd, hand_data, timestamp_ms=int(timestamp * 1000), iteration=itr
         )
         t1 = time.time()
+
+        print(f"Segmentation time: {t1 - t0:.3f} seconds")
 
         t1 = time.perf_counter()
 
@@ -198,6 +205,28 @@ def main(cfg, start_rerun: bool = False):
 import argparse
 
 
+
+training_path = f"dataset/graph_samples_radio_epic_hd_new"
+
+
+import copy
+def process_vrs_hd(vrs_file, device):
+    GlobalHydra.instance().clear()
+    with initialize(config_path="conf", version_base=None):
+        cfg = compose(config_name="config")
+        cfg.training_generator.path = training_path
+        cfg.dataset = "hd_epic"
+        cfg.vrs_loader.path = vrs_file
+        main(cfg, start_rerun=False, device=device)
+        rr.Clear(recursive=True)
+        torch.cuda.empty_cache()
+        gc.collect()
+
+
+def mp_process_vrs_hd(args):
+    vrs_file, device = args
+    return process_vrs_hd(vrs_file, device)
+
 if __name__ == "__main__":
     GlobalHydra.instance().clear()
 
@@ -218,8 +247,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.dataset == "red":
+        print("+++++++++++++++++++ USING RED")
         if args.full:
-
             # find all the folder in the videos directory
             train_path = "dataset/recordings/train"
             val_path = "dataset/recordings/val"
@@ -235,15 +264,12 @@ if __name__ == "__main__":
             print("Train folders:", train_folders)
             print("Val folders:", val_folders)
             # get the config from hydra
-            from hydra.utils import instantiate
-            from omegaconf import OmegaConf
-            from hydra import compose, initialize
             with initialize(config_path="conf", version_base=None):
                 cfg = compose(config_name="config")
 
                 # create a randoom folder in dataset/graph_samplesXXXXX
                 cfg.training_generator.path = f"dataset/graph_samples{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
+                cfg.dataset = "red"
                 # first process the training videos
                 for folder in train_folders:
                     cfg.video.path = folder
@@ -273,47 +299,53 @@ if __name__ == "__main__":
 
     elif args.dataset == "hd_epic":
         if args.full:
-            # find all the folder in the videos directory
-            train_path = "dataset/HD-EPIC/VRS/"
-
-            train_folders = []
-            for folder in os.listdir(train_path):
-                train_folders.append(os.path.join(train_path, folder))
-
-
-            print("Train folders:", train_folders)
-            # get the config from hydra
             from hydra.utils import instantiate
             from omegaconf import OmegaConf
             from hydra import compose, initialize
-            with initialize(config_path="conf", version_base=None):
-                cfg = compose(config_name="config")
+            import time
 
-                # create a randoom folder in dataset/graph_samplesXXXXX
-                cfg.training_generator.path = f"dataset/graph_samples{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            train_path = "dataset/HD-EPIC/VRS/"
 
-                # first process the training videos
-                for folder in train_folders:
-                    for vrs_file in os.listdir(folder):
-                        if not vrs_file.endswith(".vrs"):
-                            print(f"Skipping non-vrs file: {vrs_file}")
+            vrs_files = []
+            for folder in os.listdir(train_path):
+                for vrs_file in os.listdir(train_path + folder):
+                    if vrs_file.endswith(".vrs"):
+                        vrs_files.append(train_path + folder + "/"+ vrs_file)
+            
+            print("Found vrs files", len(vrs_files), " in the directories")
 
-                        cfg.dataset = "hd_epic"
-                        cfg.vrs_loader.path = os.path.join(folder, vrs_file)
-                        print(f"Processing training folder: {cfg.vrs_loader.path}")
-                        # rr.init("video_stream", spawn=True)  # spawn=True ⇒ open viewer
+            gpus_available = list(range(torch.cuda.device_count()))
 
-                        main(cfg, start_rerun=False)
+            mp.set_start_method("spawn", force=True)
+            
+            # Create an argument list for each vrs file; assign devices round robin.
+            # Initialize a dictionary to track the process running on each device.
+            device_process = {"cuda:" + str(g): None for g in gpus_available}
+            # Create a copy of the list of vrs_files to process.
+            vrs_queue = list(vrs_files)
 
-                        rr.Clear(recursive=True)
-                        # empty the cuda cache and free up cuda memory
-                        torch.cuda.empty_cache()
-                        gc.collect()
+            # Loop until all vrs files are processed and all devices are idle.
+            while vrs_queue or any(proc is not None for proc in device_process.values()):
+                for device in list(device_process.keys()):
+                    proc = device_process[device]
+                    if proc is not None:
+                        # Check if the previously assigned process is finished.
+                        if not proc.is_alive():
+                            proc.join()
+                            device_process[device] = None
 
-        
+                    # If the device is idle, start processing the next vrs_file.
+                    if device_process[device] is None and vrs_queue:
+                        vrs_file = vrs_queue.pop(0)
+                        process = mp.Process(target=mp_process_vrs_hd, args=((vrs_file, device),))
+                        process.start()
+                        device_process[device] = process
+                # Sleep a little before checking again.
+                time.sleep(1)
         else:
             # Run the pipeline on a single video diectly from the config
             from hydra import compose, initialize
+            import copy
             with initialize(config_path="conf", version_base=None):
                 rr.init("video_stream", spawn=True)  # spawn=True ⇒ open viewer
                 rr.serve_web_viewer(open_browser=False)

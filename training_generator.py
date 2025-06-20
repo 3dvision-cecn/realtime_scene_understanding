@@ -19,10 +19,11 @@ from avion_wrapper import AVIONForwardModule
 
 class TrainingGenerator():
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, device):
         self.cfg = cfg
+        self.device = device
 
-        self.avion = AVIONForwardModule()
+        self.avion = AVIONForwardModule(device).to(self.device)
 
         self.sequence = []
 

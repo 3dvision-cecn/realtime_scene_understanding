@@ -21,6 +21,9 @@ import matplotlib.pyplot as plt
 from tgnn_model import GraphClassifier
 from data_loader import GraphDataset
 from vn_mappings import generate_label_map, load_vn_mappings
+from tqdm import tqdm
+
+
 
 
 def plot_confusion_matrix(true_labels, pred_labels, label_type="Verb"):
@@ -73,7 +76,7 @@ def train_fn(model, train_loader, optimizer, criterion, device, mapping_vn2act):
     true_verb_ids = []
     true_noun_ids = []
 
-    for batch in train_loader:
+    for batch in tqdm(train_loader, desc="Training"):
         batch = batch.to(device)
         optimizer.zero_grad()
 
@@ -258,7 +261,7 @@ def main(args):
 
     print(f"Num actions: {len(mapping_vn2act)}")
 
-    model = GraphClassifier(3072, 64, 4, len(mapping_vn2act)).to(device)
+    model = GraphClassifier(3072, 512, 4, len(mapping_vn2act)).to(device)
     optimizer = optim.Adam(model.parameters(), lr=LR)
     criterion = nn.CrossEntropyLoss()
 
@@ -266,13 +269,15 @@ def main(args):
         data_dir=args.dataset_dir + "/train",
         embedder=embedder,
         metadata_csv=train_csv,
-        mapping_vn2act=mapping_vn2act
+        mapping_vn2act=mapping_vn2act,
+        node_drop_p=0.3
     )
     val_dataset = GraphDataset(
         data_dir=args.dataset_dir + "/val",
         embedder=embedder,
         metadata_csv=train_csv,
-        mapping_vn2act=mapping_vn2act
+        mapping_vn2act=mapping_vn2act,
+        node_drop_p=0.0
     )
 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -348,9 +353,9 @@ if __name__ == "__main__":
                            help="Path to the validation CSV file")
     argparser.add_argument("--batch_size", type=int, default=8, 
                            help="Batch size for training")
-    argparser.add_argument("--epochs", type=int, default=70, 
+    argparser.add_argument("--epochs", type=int, default=300, 
                            help="Number of epochs for training")
-    argparser.add_argument("--lr", type=float, default=0.001, 
+    argparser.add_argument("--lr", type=float, default=0.0001, 
                            help="Learning rate for the optimizer")
     argparser.add_argument("--model_output_dir", type=str, 
                            default="trained_models", 

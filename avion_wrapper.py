@@ -35,7 +35,7 @@ def generate_label_map(dataset):
         vn_list = sorted(vn_list)
         print('# of action= {}'.format(len(vn_list)))
         mapping_vn2act = {vn: i for i, vn in enumerate(vn_list)}
-        print('mapping_vn2act', mapping_vn2act)
+        # print('mapping_vn2act', mapping_vn2act)
         labels = [list(set(mapping_vn2narration[vn_list[i]])) for i in range(len(mapping_vn2act))]
         # shape of the labels
         # print(len(labels), len(labels[0]), labels[0])
@@ -76,8 +76,10 @@ class AVIONForwardModule(nn.Module):
     Expects a float32 tensor shaped (T, H, W, C) in BGR.
     Returns (argmax, softmax).
     """
-    def __init__(self):
+    def __init__(self, device):
         super().__init__()
+        self.device = device
+
         self.backbone = self.initialize_backbone()
         self.crop_size = 224
 
@@ -107,7 +109,7 @@ class AVIONForwardModule(nn.Module):
             state_dict[k.replace('module.', '')] = v
 
         old_args = ckpt['args']
-        print("=> creating model: {}".format(old_args.model))
+        # print("=> creating model: {}".format(old_args.model))
 
         model = getattr(model_clip, "CLIP_VITB16")(
             freeze_temperature=True,
@@ -139,11 +141,11 @@ class AVIONForwardModule(nn.Module):
             dropout=0.0,
             num_classes=3806
         )
-        model = model.cuda()
+        model = model.to(self.device)
 
         # Load finetuning checkpoint correctly
         checkpoint = torch.load(fine_tune_path, map_location='cpu')
-        print("Checkpoint keys:", list(checkpoint.keys()))
+        # print("Checkpoint keys:", list(checkpoint.keys()))
 
         # Fix module prefix issue in checkpoint
         if 'state_dict' in checkpoint:
@@ -155,7 +157,7 @@ class AVIONForwardModule(nn.Module):
             
             # Now load the fixed state dict
             result = model.load_state_dict(state_dict, strict=False)
-            print("Loaded model weights:", result)
+            # print("Loaded model weights:", result)
         else:
             print("Error: Checkpoint doesn't contain 'state_dict' key")
 
@@ -188,14 +190,14 @@ class AVIONForwardModule(nn.Module):
         sw = (new_w - self.crop_size) // 2
         frames = frames[:, :, sh : sh + self.crop_size,
                                sw : sw + self.crop_size]
-
+        frames = frames.to(self.device)
         # 4. normalise exactly as in training (0-255 range!)
-        mean = self.mean.view(1, 3, 1, 1)
-        std  = self.std.view(1, 3, 1, 1)
+        mean = self.mean.view(1, 3, 1, 1).to(self.device)
+        std  = self.std.view(1, 3, 1, 1).to(self.device)
         frames = (frames - mean) / std
 
         # 5. TCHW → CTHW, add batch dim, move to CUDA
-        frames = frames.permute(1, 0, 2, 3).unsqueeze(0).to("cuda").to(torch.bfloat16)
+        frames = frames.permute(1, 0, 2, 3).unsqueeze(0).to(torch.bfloat16)
 
         # 6. imitate the autocast in your update() loop:
         #    keep the graph JIT-safe by *explicitly* casting to BF16

@@ -1,0 +1,996 @@
+[
+    {
+        "origin_physical_setting_id": "bikebay01",
+        "video_source_id": 4,
+        "metadata": "{}",
+        "univ_name": "cmu",
+        "physical_uid": 97
+    },
+    {
+        "origin_physical_setting_id": "bikebay02",
+        "video_source_id": 4,
+        "metadata": "{}",
+        "univ_name": "cmu",
+        "physical_uid": 98
+    },
+    {
+        "origin_physical_setting_id": "kitchen01",
+        "video_source_id": 4,
+        "metadata": "{}",
+        "univ_name": "cmu",
+        "physical_uid": 99
+    },
+    {
+        "origin_physical_setting_id": "field01",
+        "video_source_id": 4,
+        "metadata": "{}",
+        "univ_name": "cmu",
+        "physical_uid": 100
+    },
+    {
+        "origin_physical_setting_id": "field02",
+        "video_source_id": 4,
+        "metadata": "{}",
+        "univ_name": "cmu",
+        "physical_uid": 101
+    },
+    {
+        "origin_physical_setting_id": "field03",
+        "video_source_id": 4,
+        "metadata": "{}",
+        "univ_name": "cmu",
+        "physical_uid": 102
+    },
+    {
+        "origin_physical_setting_id": "field04",
+        "video_source_id": 4,
+        "metadata": "{}",
+        "univ_name": "cmu",
+        "physical_uid": 103
+    },
+    {
+        "origin_physical_setting_id": "01_bike",
+        "video_source_id": 22,
+        "metadata": "{}",
+        "univ_name": "fair",
+        "physical_uid": 47
+    },
+    {
+        "origin_physical_setting_id": "01_climbingwallmpk",
+        "video_source_id": 22,
+        "metadata": "{}",
+        "univ_name": "fair",
+        "physical_uid": 60
+    },
+    {
+        "origin_physical_setting_id": "01_kitchensf",
+        "video_source_id": 22,
+        "metadata": "{}",
+        "univ_name": "fair",
+        "physical_uid": 61
+    },
+    {
+        "origin_physical_setting_id": "01_kitchenny",
+        "video_source_id": 22,
+        "metadata": "{}",
+        "univ_name": "fair",
+        "physical_uid": 62
+    },
+    {
+        "origin_physical_setting_id": "01_kitchenbur",
+        "video_source_id": 22,
+        "metadata": "{}",
+        "univ_name": "fair",
+        "physical_uid": 117
+    },
+    {
+        "origin_physical_setting_id": "C-LAB-15",
+        "video_source_id": 14,
+        "metadata": "{}",
+        "univ_name": "georgiatech",
+        "physical_uid": 48
+    },
+    {
+        "origin_physical_setting_id": "COOK-1",
+        "video_source_id": 14,
+        "metadata": "{}",
+        "univ_name": "georgiatech",
+        "physical_uid": 155
+    },
+    {
+        "origin_physical_setting_id": "C-LAB-CSL",
+        "video_source_id": 14,
+        "metadata": "{}",
+        "univ_name": "georgiatech",
+        "physical_uid": 57
+    },
+    {
+        "origin_physical_setting_id": "COOK-2",
+        "video_source_id": 14,
+        "metadata": "{}",
+        "univ_name": "georgiatech",
+        "physical_uid": 156
+    },
+    {
+        "origin_physical_setting_id": "BIKE-1",
+        "video_source_id": 14,
+        "metadata": "{}",
+        "univ_name": "georgiatech",
+        "physical_uid": 157
+    },
+    {
+        "origin_physical_setting_id": "COOK-3",
+        "video_source_id": 14,
+        "metadata": "{}",
+        "univ_name": "georgiatech",
+        "physical_uid": 158
+    },
+    {
+        "origin_physical_setting_id": "COOK-4",
+        "video_source_id": 14,
+        "metadata": "{}",
+        "univ_name": "georgiatech",
+        "physical_uid": 159
+    },
+    {
+        "origin_physical_setting_id": "COOK-5",
+        "video_source_id": 14,
+        "metadata": "{}",
+        "univ_name": "georgiatech",
+        "physical_uid": 160
+    },
+    {
+        "origin_physical_setting_id": "COOK-6",
+        "video_source_id": 14,
+        "metadata": "{}",
+        "univ_name": "georgiatech",
+        "physical_uid": 161
+    },
+    {
+        "origin_physical_setting_id": "COOK-7",
+        "video_source_id": 14,
+        "metadata": "{}",
+        "univ_name": "georgiatech",
+        "physical_uid": 162
+    },
+    {
+        "origin_physical_setting_id": "COOK-8",
+        "video_source_id": 14,
+        "metadata": "{}",
+        "univ_name": "georgiatech",
+        "physical_uid": 163
+    },
+    {
+        "origin_physical_setting_id": "COOK-9",
+        "video_source_id": 14,
+        "metadata": "{}",
+        "univ_name": "georgiatech",
+        "physical_uid": 164
+    },
+    {
+        "origin_physical_setting_id": "COOK-10",
+        "video_source_id": 14,
+        "metadata": "{}",
+        "univ_name": "georgiatech",
+        "physical_uid": 165
+    },
+    {
+        "origin_physical_setting_id": "BIKE-2",
+        "video_source_id": 14,
+        "metadata": "{}",
+        "univ_name": "georgiatech",
+        "physical_uid": 166
+    },
+    {
+        "origin_physical_setting_id": "AD001",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 6
+    },
+    {
+        "origin_physical_setting_id": "AR001",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 7
+    },
+    {
+        "origin_physical_setting_id": "BH001",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 8
+    },
+    {
+        "origin_physical_setting_id": "BH002",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 9
+    },
+    {
+        "origin_physical_setting_id": "BH003",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 10
+    },
+    {
+        "origin_physical_setting_id": "BH004",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 11
+    },
+    {
+        "origin_physical_setting_id": "BH005",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 12
+    },
+    {
+        "origin_physical_setting_id": "AN001",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 44
+    },
+    {
+        "origin_physical_setting_id": "AN002",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 45
+    },
+    {
+        "origin_physical_setting_id": "KM001",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 46
+    },
+    {
+        "origin_physical_setting_id": "RM001",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 63
+    },
+    {
+        "origin_physical_setting_id": "AN003",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 64
+    },
+    {
+        "origin_physical_setting_id": "AN004",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 65
+    },
+    {
+        "origin_physical_setting_id": "AN005",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 66
+    },
+    {
+        "origin_physical_setting_id": "AN006",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 67
+    },
+    {
+        "origin_physical_setting_id": "BH006",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 68
+    },
+    {
+        "origin_physical_setting_id": "MH001",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 148
+    },
+    {
+        "origin_physical_setting_id": "MH002",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 149
+    },
+    {
+        "origin_physical_setting_id": "MH003",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 150
+    },
+    {
+        "origin_physical_setting_id": "RA001",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 151
+    },
+    {
+        "origin_physical_setting_id": "MH004",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 152
+    },
+    {
+        "origin_physical_setting_id": "GH001",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 153
+    },
+    {
+        "origin_physical_setting_id": "RO001",
+        "video_source_id": 8,
+        "metadata": "{}",
+        "univ_name": "iiith",
+        "physical_uid": 154
+    },
+    {
+        "origin_physical_setting_id": "1",
+        "video_source_id": 12,
+        "metadata": "{}",
+        "univ_name": "indiana",
+        "physical_uid": 74
+    },
+    {
+        "origin_physical_setting_id": "2",
+        "video_source_id": 12,
+        "metadata": "{}",
+        "univ_name": "indiana",
+        "physical_uid": 75
+    },
+    {
+        "origin_physical_setting_id": "3",
+        "video_source_id": 12,
+        "metadata": "{}",
+        "univ_name": "indiana",
+        "physical_uid": 76
+    },
+    {
+        "origin_physical_setting_id": "4",
+        "video_source_id": 12,
+        "metadata": "{}",
+        "univ_name": "indiana",
+        "physical_uid": 77
+    },
+    {
+        "origin_physical_setting_id": "5",
+        "video_source_id": 12,
+        "metadata": "{}",
+        "univ_name": "indiana",
+        "physical_uid": 78
+    },
+    {
+        "origin_physical_setting_id": "6",
+        "video_source_id": 12,
+        "metadata": "{}",
+        "univ_name": "indiana",
+        "physical_uid": 79
+    },
+    {
+        "origin_physical_setting_id": "7",
+        "video_source_id": 12,
+        "metadata": "{}",
+        "univ_name": "indiana",
+        "physical_uid": 80
+    },
+    {
+        "origin_physical_setting_id": "8",
+        "video_source_id": 12,
+        "metadata": "{}",
+        "univ_name": "indiana",
+        "physical_uid": 81
+    },
+    {
+        "origin_physical_setting_id": "9",
+        "video_source_id": 12,
+        "metadata": "{}",
+        "univ_name": "indiana",
+        "physical_uid": 82
+    },
+    {
+        "origin_physical_setting_id": "10",
+        "video_source_id": 12,
+        "metadata": "{}",
+        "univ_name": "indiana",
+        "physical_uid": 83
+    },
+    {
+        "origin_physical_setting_id": "MNTC_VE_Z1",
+        "video_source_id": 9,
+        "metadata": "{}",
+        "univ_name": "minnesota",
+        "physical_uid": 107
+    },
+    {
+        "origin_physical_setting_id": "MNTC_APT_1",
+        "video_source_id": 9,
+        "metadata": "{}",
+        "univ_name": "minnesota",
+        "physical_uid": 108
+    },
+    {
+        "origin_physical_setting_id": "MNTC_APT_2",
+        "video_source_id": 9,
+        "metadata": "{}",
+        "univ_name": "minnesota",
+        "physical_uid": 109
+    },
+    {
+        "origin_physical_setting_id": "MNTC_APT_3",
+        "video_source_id": 9,
+        "metadata": "{}",
+        "univ_name": "minnesota",
+        "physical_uid": 110
+    },
+    {
+        "origin_physical_setting_id": "MNTC_APT_4",
+        "video_source_id": 9,
+        "metadata": "{}",
+        "univ_name": "minnesota",
+        "physical_uid": 111
+    },
+    {
+        "origin_physical_setting_id": "MNTC_APT_5",
+        "video_source_id": 9,
+        "metadata": "{}",
+        "univ_name": "minnesota",
+        "physical_uid": 112
+    },
+    {
+        "origin_physical_setting_id": "MNTC_HOM_1",
+        "video_source_id": 9,
+        "metadata": "{}",
+        "univ_name": "minnesota",
+        "physical_uid": 113
+    },
+    {
+        "origin_physical_setting_id": "MNTC_HOM_2",
+        "video_source_id": 9,
+        "metadata": "{}",
+        "univ_name": "minnesota",
+        "physical_uid": 114
+    },
+    {
+        "origin_physical_setting_id": "MNTC_HOM_3",
+        "video_source_id": 9,
+        "metadata": "{}",
+        "univ_name": "minnesota",
+        "physical_uid": 115
+    },
+    {
+        "origin_physical_setting_id": "MNTC_HOM_4",
+        "video_source_id": 9,
+        "metadata": "{}",
+        "univ_name": "minnesota",
+        "physical_uid": 116
+    },
+    {
+        "origin_physical_setting_id": "1",
+        "video_source_id": 21,
+        "metadata": "{}",
+        "univ_name": "upenn",
+        "physical_uid": 43
+    },
+    {
+        "origin_physical_setting_id": "2",
+        "video_source_id": 21,
+        "metadata": "{}",
+        "univ_name": "upenn",
+        "physical_uid": 89
+    },
+    {
+        "origin_physical_setting_id": "3",
+        "video_source_id": 21,
+        "metadata": "{}",
+        "univ_name": "upenn",
+        "physical_uid": 90
+    },
+    {
+        "origin_physical_setting_id": "4",
+        "video_source_id": 21,
+        "metadata": "{}",
+        "univ_name": "upenn",
+        "physical_uid": 91
+    },
+    {
+        "origin_physical_setting_id": "5",
+        "video_source_id": 21,
+        "metadata": "{}",
+        "univ_name": "upenn",
+        "physical_uid": 92
+    },
+    {
+        "origin_physical_setting_id": "6",
+        "video_source_id": 21,
+        "metadata": "{}",
+        "univ_name": "upenn",
+        "physical_uid": 93
+    },
+    {
+        "origin_physical_setting_id": "7",
+        "video_source_id": 21,
+        "metadata": "{}",
+        "univ_name": "upenn",
+        "physical_uid": 94
+    },
+    {
+        "origin_physical_setting_id": "8",
+        "video_source_id": 21,
+        "metadata": "{}",
+        "univ_name": "upenn",
+        "physical_uid": 95
+    },
+    {
+        "origin_physical_setting_id": "9",
+        "video_source_id": 21,
+        "metadata": "{}",
+        "univ_name": "upenn",
+        "physical_uid": 96
+    },
+    {
+        "origin_physical_setting_id": "ps_001",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 28
+    },
+    {
+        "origin_physical_setting_id": "ps_002",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 29
+    },
+    {
+        "origin_physical_setting_id": "ps_003",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 30
+    },
+    {
+        "origin_physical_setting_id": "ps_004",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 31
+    },
+    {
+        "origin_physical_setting_id": "ps_005",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 32
+    },
+    {
+        "origin_physical_setting_id": "ps_006",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 33
+    },
+    {
+        "origin_physical_setting_id": "ps_007",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 34
+    },
+    {
+        "origin_physical_setting_id": "ps_008",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 35
+    },
+    {
+        "origin_physical_setting_id": "ps_009",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 36
+    },
+    {
+        "origin_physical_setting_id": "ps_010",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 37
+    },
+    {
+        "origin_physical_setting_id": "bbc_01",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 53
+    },
+    {
+        "origin_physical_setting_id": "bbc_02",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 54
+    },
+    {
+        "origin_physical_setting_id": "bbc_03",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 55
+    },
+    {
+        "origin_physical_setting_id": "ps_011",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 72
+    },
+    {
+        "origin_physical_setting_id": "ps_012",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 73
+    },
+    {
+        "origin_physical_setting_id": "ps_013",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 140
+    },
+    {
+        "origin_physical_setting_id": "ps_014",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 141
+    },
+    {
+        "origin_physical_setting_id": "ps_015",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 142
+    },
+    {
+        "origin_physical_setting_id": "ps_016",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 143
+    },
+    {
+        "origin_physical_setting_id": "ps_017",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 144
+    },
+    {
+        "origin_physical_setting_id": "ps_018",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 145
+    },
+    {
+        "origin_physical_setting_id": "ps_019",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 146
+    },
+    {
+        "origin_physical_setting_id": "ps_020",
+        "video_source_id": 19,
+        "metadata": "{}",
+        "univ_name": "sfu",
+        "physical_uid": 147
+    },
+    {
+        "origin_physical_setting_id": "1",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 15
+    },
+    {
+        "origin_physical_setting_id": "2",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 16
+    },
+    {
+        "origin_physical_setting_id": "3",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 17
+    },
+    {
+        "origin_physical_setting_id": "4",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 18
+    },
+    {
+        "origin_physical_setting_id": "5",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 19
+    },
+    {
+        "origin_physical_setting_id": "6",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 20
+    },
+    {
+        "origin_physical_setting_id": "7",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 21
+    },
+    {
+        "origin_physical_setting_id": "8",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 22
+    },
+    {
+        "origin_physical_setting_id": "9",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 23
+    },
+    {
+        "origin_physical_setting_id": "10",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 24
+    },
+    {
+        "origin_physical_setting_id": "11",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 25
+    },
+    {
+        "origin_physical_setting_id": "12",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 26
+    },
+    {
+        "origin_physical_setting_id": "13",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 27
+    },
+    {
+        "origin_physical_setting_id": "14",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 123
+    },
+    {
+        "origin_physical_setting_id": "15",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 124
+    },
+    {
+        "origin_physical_setting_id": "16",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 125
+    },
+    {
+        "origin_physical_setting_id": "17",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 126
+    },
+    {
+        "origin_physical_setting_id": "18",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 127
+    },
+    {
+        "origin_physical_setting_id": "19",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 128
+    },
+    {
+        "origin_physical_setting_id": "20",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 129
+    },
+    {
+        "origin_physical_setting_id": "21",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 130
+    },
+    {
+        "origin_physical_setting_id": "22",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 131
+    },
+    {
+        "origin_physical_setting_id": "23",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 132
+    },
+    {
+        "origin_physical_setting_id": "24",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 133
+    },
+    {
+        "origin_physical_setting_id": "25",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 134
+    },
+    {
+        "origin_physical_setting_id": "26",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 135
+    },
+    {
+        "origin_physical_setting_id": "27",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 136
+    },
+    {
+        "origin_physical_setting_id": "28",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 137
+    },
+    {
+        "origin_physical_setting_id": "29",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 138
+    },
+    {
+        "origin_physical_setting_id": "30",
+        "video_source_id": 13,
+        "metadata": "{}",
+        "univ_name": "nus",
+        "physical_uid": 139
+    },
+    {
+        "origin_physical_setting_id": "1",
+        "video_source_id": 20,
+        "metadata": "{}",
+        "univ_name": "unc",
+        "physical_uid": 51
+    },
+    {
+        "origin_physical_setting_id": "2",
+        "video_source_id": 20,
+        "metadata": "{}",
+        "univ_name": "unc",
+        "physical_uid": 121
+    },
+    {
+        "origin_physical_setting_id": "3",
+        "video_source_id": 20,
+        "metadata": "{}",
+        "univ_name": "unc",
+        "physical_uid": 122
+    },
+    {
+        "origin_physical_setting_id": "001",
+        "video_source_id": 18,
+        "metadata": "{}",
+        "univ_name": "uniandes",
+        "physical_uid": 4
+    },
+    {
+        "origin_physical_setting_id": "002",
+        "video_source_id": 18,
+        "metadata": "{}",
+        "univ_name": "uniandes",
+        "physical_uid": 5
+    },
+    {
+        "origin_physical_setting_id": "003",
+        "video_source_id": 18,
+        "metadata": "{}",
+        "univ_name": "uniandes",
+        "physical_uid": 49
+    },
+    {
+        "origin_physical_setting_id": "004",
+        "video_source_id": 18,
+        "metadata": "{}",
+        "univ_name": "uniandes",
+        "physical_uid": 50
+    },
+    {
+        "origin_physical_setting_id": "1",
+        "video_source_id": 10,
+        "metadata": "{}",
+        "univ_name": "utokyo",
+        "physical_uid": 38
+    },
+    {
+        "origin_physical_setting_id": "2",
+        "video_source_id": 10,
+        "metadata": "{}",
+        "univ_name": "utokyo",
+        "physical_uid": 39
+    },
+    {
+        "origin_physical_setting_id": "3",
+        "video_source_id": 10,
+        "metadata": "{}",
+        "univ_name": "utokyo",
+        "physical_uid": 87
+    },
+    {
+        "origin_physical_setting_id": "4",
+        "video_source_id": 10,
+        "metadata": "{}",
+        "univ_name": "utokyo",
+        "physical_uid": 88
+    }
+]

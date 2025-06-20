@@ -200,7 +200,6 @@ RUN pip install git+https://github.com/openai/CLIP.git
 RUN     mkdir -p ~/.ssh && \
         ssh-keyscan github.com >> ~/.ssh/known_hosts
 
-
 # aria
 RUN pip install projectaria_tools
 
@@ -219,12 +218,46 @@ RUN pip install git+https://github.com/facebookresearch/EdgeTAM.git
 
 RUN pip install webdataset ultralytics transformers==4.51.3 torch_geometric==2.6.1
 
-# flash attn
-RUN MAX_JOBS=8 pip install flash-attn --no-build-isolation
-
 # renderer
-RUN apt-get update && apt-get install -y libglfw3-dev libgles2-mesa-dev
+RUN apt-get update && apt-get install -y libglfw3-dev libgles2-mesa-dev openssh-server
 
-# Expose JupyterLab port
-EXPOSE 8888
+# openclip
+RUN pip install git+https://github.com/mlfoundations/open_clip.git
+
+# apex
+RUN pip install torch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0 --index-url https://download.pytorch.org/whl/cu124
+RUN CUDA_HOME=/usr/local/cuda-12.4/ pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation --config-settings "--build-option=--cpp_ext" --config-settings "--build-option=--cuda_ext" git+https://github.com/NVIDIA/apex.git
+# flash attn
+RUN CUDA_HOME=/usr/local/cuda-12.4/ MAX_JOBS=8 pip install flash-attn --no-build-isolation
+
+# omni ogn
+RUN --mount=type=ssh,id=github git clone git@github.com:3dvision-cecn/OMNI-DC.git /tmp/omni_dc
+RUN --mount=type=ssh,id=github pip install -e /tmp/omni_dc
+
+RUN pip install mmsegmentation==0.22.1 mmcv==1.4.4
+
+# ----  SSH support  -------------------------------------------------
+# Install OpenSSH, create runtime dirs and a non-root user
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y --no-install-recommends openssh-server tmux && \
+    mkdir -p /var/run/sshd && \
+    useradd -m -s /bin/bash runpod && \
+    echo "runpod ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Generate host keys at build time (optional but speeds first boot)
+RUN ssh-keygen -A
+
+# Copy *public* key or let RunPod inject it with an env-var at start-time
+ARG SSH_PUB_KEY="ssh-ed25519 AAAA... user@example"
+RUN install -d -m 700 /home/runpod/.ssh && \
+    echo "${SSH_PUB_KEY}" > /home/runpod/.ssh/authorized_keys && \
+    chmod 600 /home/runpod/.ssh/authorized_keys && \
+    chown -R runpod:runpod /home/runpod/.ssh
+
+# Listen on the classic port in the container
+EXPOSE 22
+
+# Run the daemon in the foreground so Docker keeps the container alive
+CMD ["/bin/bash", "-c", "/usr/sbin/sshd -D & sleep infinity"]
+
 

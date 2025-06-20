@@ -119,7 +119,7 @@ def get_intrinsics(metadata_dict: dict, downscale_factor: float = 1.0) -> int:
 
 
 class R3D_loader:
-    def __init__(self, cfg):
+    def __init__(self, cfg, device):
         self.cfg = cfg
         self.datapath = cfg.path
         
@@ -139,7 +139,7 @@ class R3D_loader:
         self.poses = get_poses(metadata)
 
         # self.promptda = PromptDA(encoder = "vits", ckpt_path = "conf/checkpoints/promptda/model(1).ckpt").to("cuda").eval()
-
+        self.decimation_factor = 8
 
 
     def get_intrinsics(self):
@@ -160,7 +160,7 @@ class R3D_loader:
         # pose
         pose = self.poses[self.frame_idx]
 
-        self.frame_idx += 1
+        self.frame_idx += self.decimation_factor
 
         return color, depth, pose, self.frame_idx / 30.0  # assuming 30 fps
     

@@ -16,6 +16,7 @@ class GraphClassifier(nn.Module):
         # create MLP for edge features
         self.edge_mlp = nn.Sequential(
             nn.Linear(edge_feat_dim, 512),
+            nn.Dropout(0.3),
             nn.ReLU(),
             nn.Linear(512, feat_dim)
         )
@@ -24,8 +25,8 @@ class GraphClassifier(nn.Module):
         self.node_mlp = nn.Sequential(
             nn.Linear(in_channels, 512),
             nn.ReLU(),
-            nn.Dropout(0.1),
             nn.Linear(512, 512),
+            nn.Dropout(0.3),
             nn.ReLU(),
             nn.Linear(512, feat_dim)
         )
@@ -33,7 +34,7 @@ class GraphClassifier(nn.Module):
 
         self.conv = HeteroConv({
             ('object', 'relation', 'object'): GATConv(feat_dim, hidden_channels, edge_dim=feat_dim),
-            ('object', 'temporal', 'object'): TransformerConv(feat_dim, hidden_channels),
+            ('object', 'temporal', 'object'): GATConv(feat_dim, hidden_channels, edge_dim=feat_dim),
         }, aggr='sum')
 
 
@@ -59,6 +60,7 @@ class GraphClassifier(nn.Module):
             graph_embedding = self.pool(x_dict['object'], batch['object'].batch)
         else:
             # Take mean for single graph
+            print("getting mean")
             graph_embedding = x_dict['object'].mean(dim=0, keepdim=True)  
             
         graph_embedding = F.relu(self.fc1(graph_embedding))

@@ -266,18 +266,20 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
 
     train_dataset = GraphDataset(
-        data_dir=args.dataset_dir + "/train",
+        data_dir=args.dataset_dir,
         embedder=embedder,
         metadata_csv=train_csv,
         mapping_vn2act=mapping_vn2act,
-        node_drop_p=0.3
+        node_drop_p=0.3,
+        is_train=True
     )
     val_dataset = GraphDataset(
-        data_dir=args.dataset_dir + "/val",
+        data_dir=args.dataset_dir,
         embedder=embedder,
         metadata_csv=train_csv,
         mapping_vn2act=mapping_vn2act,
-        node_drop_p=0.0
+        node_drop_p=0.0,
+        is_train=False
     )
 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)

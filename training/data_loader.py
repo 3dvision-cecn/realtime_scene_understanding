@@ -60,11 +60,14 @@ def verify_hypergraph(data: 'HeteroData'):
 
 
 class GraphDataset(Dataset):
-    def __init__(self, data_dir, embedder, metadata_csv, mapping_vn2act, node_drop_p = 0.0):
+    def __init__(self, data_dir, embedder, metadata_csv, mapping_vn2act, node_drop_p = 0.0, is_train=True):
 
         self.data_dir = data_dir
         self.embedder = embedder
         self.mapping_vn2act = mapping_vn2act
+
+        self.epic_hd_val_prob = 0.0
+        self.iphone_val_prob = 0.5
 
         graph_file_count = 0
         self.filenames_list = []
@@ -78,6 +81,43 @@ class GraphDataset(Dataset):
                     graph_file_count += 1
         print(f"Found {graph_file_count} graph files in {self.data_dir}")
         self.node_drop_p = node_drop_p
+
+        # check if a metadata CSV file exists
+        self.metadata_csv_path = self.data_dir + "/metadata.csv"
+        
+        # randomly sample 10% of the dataset for validation
+        if not os.path.exists(self.metadata_csv_path):
+            print(f"Metadata CSV file not found at {self.metadata_csv_path}. Creating a new one.")
+            
+            # create a new metadata CSV file
+            with open(self.metadata_csv_path, 'w', newline='') as csvfile:
+                fieldnames = ['path', 'is_train']
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+
+                for graph_path in self.filenames_list:
+                    # save the path and whether it's for training or validation
+                    # diffrent prob for epic_hd and iphone
+                    if "phone" in graph_path:
+                        is_train = random.random() < (1 - self.iphone_val_prob)
+                    elif "epic_hd" in graph_path:
+                        is_train = random.random() < (1 - self.epic_hd_val_prob)
+                    else:
+                        raise ValueError(f"Unknown dataset type in path: {graph_path}")
+
+                    writer.writerow({'path': graph_path, 'is_train': is_train})
+
+        # load the metadata CSV file
+        self.metadata_df = pd.read_csv(self.metadata_csv_path)
+        # filter the dataset based on the is_train flag
+        if is_train:
+            self.metadata_df = self.metadata_df[self.metadata_df['is_train'] == True]
+        else:
+            self.metadata_df = self.metadata_df[self.metadata_df['is_train'] == False]
+
+        # load the filenames from the metadata DataFrame
+        self.filenames_list = self.metadata_df['path'].tolist()
+        print(f"Filtered dataset contains {len(self.filenames_list)} files for {'training' if is_train else 'validation'}.")
 
 
 

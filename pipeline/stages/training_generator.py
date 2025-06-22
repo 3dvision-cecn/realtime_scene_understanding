@@ -1,20 +1,11 @@
-from collections import OrderedDict
 import numpy as np
 import torch
-import torch.nn.functional as F
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import os
-
-
-import orjson, pathlib
-import json as js
-
 from datetime import datetime
 import h5py
 
-from avion_wrapper import AVIONForwardModule
+
+from pipeline.utils.avion_wrapper import AVIONForwardModule
 
 
 class TrainingGenerator():
@@ -147,6 +138,12 @@ class TrainingGenerator():
                 "logits_argmax",
                 data        = logits_argmax,
                 compression = "gzip",  compression_opts = 6
+            )
+            
+            f.create_dataset(
+                "frames_rgb",
+                data=frames,  # (T, H, W, C)
+                compression="gzip", compression_opts=6
             )
 
             # one group per frame

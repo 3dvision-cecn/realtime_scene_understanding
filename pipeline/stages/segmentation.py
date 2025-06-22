@@ -9,9 +9,9 @@ from sam2.build_sam import build_sam2
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 import open3d as o3d
 
-from object import Object
-from vlm import VLM
-from embedding_generator import ObjectEmbeddingGenerator
+from pipeline.utils.object import Object
+from pipeline.utils.vlm import VLM
+from pipeline.stages.embedding_generator import ObjectEmbeddingGenerator
 
 
 def mask_radius(mask: np.ndarray) -> int:

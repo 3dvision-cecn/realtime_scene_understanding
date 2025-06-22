@@ -261,8 +261,8 @@ def main(args):
 
     print(f"Num actions: {len(mapping_vn2act)}")
 
-    model = GraphClassifier(3072, 512, 4, len(mapping_vn2act)).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=LR)
+    model = GraphClassifier(3072, 128, 4, len(mapping_vn2act)).to(device)
+    optimizer = optim.AdamW(model.parameters(), lr=LR)
     criterion = nn.CrossEntropyLoss()
 
     train_dataset = GraphDataset(
@@ -270,7 +270,7 @@ def main(args):
         embedder=embedder,
         metadata_csv=train_csv,
         mapping_vn2act=mapping_vn2act,
-        node_drop_p=0.3,
+        node_drop_p=0.2,
         is_train=True
     )
     val_dataset = GraphDataset(
@@ -353,7 +353,7 @@ if __name__ == "__main__":
     argparser.add_argument("--val_csv", type=str, 
                             default="tasets/EK100/epic-kitchens-100-annotations/EPIC_100_val.csv",
                            help="Path to the validation CSV file")
-    argparser.add_argument("--batch_size", type=int, default=8, 
+    argparser.add_argument("--batch_size", type=int, default=16, 
                            help="Batch size for training")
     argparser.add_argument("--epochs", type=int, default=300, 
                            help="Number of epochs for training")

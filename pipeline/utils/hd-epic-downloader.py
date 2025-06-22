@@ -299,7 +299,7 @@ def choose_files(what_filter=None, participants_filter=None, video_ids_filter=No
     participant_pattern = re.compile(r'P0[0-9]')
     video_id_pattern = re.compile(r'P0[0-9]-2024\d{4}-\d{6}')
 
-    with open(Path('data/md5.txt').resolve(), 'r') as f:
+    with open(Path('../data/md5.txt').resolve(), 'r') as f:
         for line in f:
             splits = line.split()
             md5 = splits[0]

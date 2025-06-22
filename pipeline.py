@@ -13,13 +13,12 @@ from omegaconf import OmegaConf
 from hydra import compose, initialize
 
 
-from video_loader import VideoLoader
-from vrs_loader import VRSLoader
-from hand_detection_hamer import HandDetection
-from segmentation import Segmentation
-from graph_generator import GraphGenerator
-from red_loader import R3D_loader
-from training_generator import TrainingGenerator
+from pipeline.loaders.vrs_loader import VRSLoader
+from pipeline.stages.hand_detection_hamer import HandDetection
+from pipeline.stages.segmentation import Segmentation
+from pipeline.stages.graph_generator import GraphGenerator
+from pipeline.loaders.red_loader import R3D_loader
+from pipeline.stages.training_generator import TrainingGenerator
 
 
 from scipy.spatial.transform import Rotation

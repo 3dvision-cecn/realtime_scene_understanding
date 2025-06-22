@@ -20,7 +20,7 @@ from projectaria_tools.core.calibration import (
     distort_by_calibration,
 )
 from projectaria_tools.core import calibration
-from points_and_observation_manager import PointsAndObservationsManager, OnlineRgbCameraHelper
+from .points_and_observation_manager import PointsAndObservationsManager, OnlineRgbCameraHelper
 from datetime import timedelta
 
 # depth estimate

@@ -21,7 +21,7 @@ import time
 import numpy as np
 from sklearn.cluster import KMeans
 
-from object import Hand, BothHands
+from ..utils.object import Hand, BothHands
 
 
 

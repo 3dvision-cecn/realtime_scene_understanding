@@ -60,14 +60,12 @@ def verify_hypergraph(data: 'HeteroData'):
 
 
 class GraphDataset(Dataset):
-    def __init__(self, data_dir, embedder, metadata_csv, mapping_vn2act, node_drop_p = 0.0, is_train=True):
+    def __init__(self, data_dir, embedder = None, metadata_csv = None, mapping_vn2act = None, node_drop_p = 0.0, is_train=True):
 
         self.data_dir = data_dir
-        self.embedder = embedder
-        self.mapping_vn2act = mapping_vn2act
 
         self.epic_hd_val_prob = 0.0
-        self.iphone_val_prob = 0.5
+        self.iphone_val_prob = 1.0
 
         graph_file_count = 0
         self.filenames_list = []
@@ -99,13 +97,13 @@ class GraphDataset(Dataset):
                     # save the path and whether it's for training or validation
                     # diffrent prob for epic_hd and iphone
                     if "phone" in graph_path:
-                        is_train = random.random() < (1 - self.iphone_val_prob)
+                        is_training = random.random() < (1 - self.iphone_val_prob)
                     elif "epic_hd" in graph_path:
-                        is_train = random.random() < (1 - self.epic_hd_val_prob)
+                        is_training = random.random() < (1 - self.epic_hd_val_prob)
                     else:
                         raise ValueError(f"Unknown dataset type in path: {graph_path}")
 
-                    writer.writerow({'path': graph_path, 'is_train': is_train})
+                    writer.writerow({'path': graph_path, 'is_train': is_training})
 
         # load the metadata CSV file
         self.metadata_df = pd.read_csv(self.metadata_csv_path)
@@ -115,9 +113,13 @@ class GraphDataset(Dataset):
         else:
             self.metadata_df = self.metadata_df[self.metadata_df['is_train'] == False]
 
+        self.is_train = is_train
+
         # load the filenames from the metadata DataFrame
         self.filenames_list = self.metadata_df['path'].tolist()
+        print(f"IS TRAIN: {is_train}")
         print(f"Filtered dataset contains {len(self.filenames_list)} files for {'training' if is_train else 'validation'}.")
+        self.frames_ = {}
 
 
 
@@ -130,24 +132,37 @@ class GraphDataset(Dataset):
         # print(f"Processing sample {idx}")
         graph_path = self.filenames_list[idx]
 
-        # Load hf5 file
-        with h5py.File(graph_path, 'r') as f:
-            label =  f["logits_argmax"][()]
-            # print(f"Graph label: {label}")
-            frames_grp = f["frames"]
-            frames = []
+        # check  frames_ cache
+        if graph_path in self.frames_:
+            frames = self.frames_[graph_path]
+            label = self.frames_[graph_path + "_label"]
+        else:
+            # Load hf5 file
+            with h5py.File(graph_path, 'r') as f:
+                label =  f["logits_argmax"][()]
+                # print(f"Graph label: {label}")
+                try:
+                    frames_grp = f["frames"]
+                except KeyError:
+                    print(f"Key 'frames' not found in {graph_path}. Skipping this file.")
+                    return self.__getitem__((idx + 1) % len(self.filenames_list))
+                frames = []
 
-            for frame_key in sorted(frames_grp.keys()):
-                g = frames_grp[frame_key]
-                frames.append(
-                    {
-                        "features":  g["features"][()],
-                        "edges":     g["edge_index"][()],
-                        "edge_lbl":  g["edge_labels"][()],
-                        "pos":       g["pos"][()],
-                        "labels":    g["labels"][()]
-                    }
-                )
+                for frame_key in sorted(frames_grp.keys()):
+                    g = frames_grp[frame_key]
+                    frames.append(
+                        {
+                            "features":  g["features"][()],
+                            "edges":     g["edge_index"][()],
+                            "edge_lbl":  g["edge_labels"][()],
+                            "pos":       g["pos"][()],
+                            "labels":    g["labels"][()]
+                        }
+                    )
+            # Store in cache
+            self.frames_[graph_path] = frames
+            self.frames_[graph_path + "_label"] = label
+            # store the label in the first frame
 
         #     print(f"Loaded {len(frames)} frames from {graph_path}")
 
@@ -178,6 +193,8 @@ class GraphDataset(Dataset):
         #here we create a hyper graph connecting 16 frames together
         total_node_count = 0
 
+        first = True
+
         for f_idx, fr in enumerate(frames):
             num_nodes = fr["features"].shape[0]
             if num_nodes == 0:
@@ -185,9 +202,23 @@ class GraphDataset(Dataset):
 
             # ---- nodes ----------------------------------------------------
             feats = torch.from_numpy(fr["features"]).float()          # (N,384)
+
+            if self.is_train:
+                # add uniform noise to the features
+                # print("feats :", feats.max(), feats.min())
+                noise = torch.randn_like(feats) * 0.1
+                feats = feats + noise
+            else:
+                pass # no noise in validation
+
+            # add a time index to the features
             node_feats.append(feats)
 
             pos   = torch.from_numpy(fr["pos"]).float()               # (N,3) ← NEW
+            # if epic in graph_path:
+            # set all positions to 0,0,0
+            pos = torch.zeros_like(pos)  # (N,3) ← NEW
+
             node_pos.append(pos)                                      #        ← NEW
 
             orig_ids.append(torch.arange(num_nodes, dtype=torch.long))
@@ -200,6 +231,8 @@ class GraphDataset(Dataset):
 
             if fr["edge_lbl"].size != 0:                       # optional
                 edge_attr = torch.from_numpy(fr["edge_lbl"]).squeeze(1).float()
+                # set first three values to 0
+                edge_attr[:, :] = 0.0
                 rel_edge_attr.append(edge_attr)
 
             # ---- temporal edges  (label-wise full bipartite) -------------
@@ -310,5 +343,12 @@ class GraphDataset(Dataset):
         zeros = torch.zeros((3806,), dtype=torch.float)  
         zeros[label] = 1.0
         data.y = zeros.unsqueeze(0)
+
+        data['is_iphone'] = torch.tensor("phone" in graph_path, dtype=torch.bool)
+
+        # data kitchen iphone -> 0
+        # data epic_hd P0 -> 1
+        # data epic_hd P1 -> 2
+        data['kitchen_num'] = torch.tensor(0 if "phone" in graph_path else 1 if "P01" in graph_path else 2, dtype=torch.long)
 
         return data

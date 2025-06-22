@@ -47,7 +47,7 @@ fi
 # ---------- Sanity checks ----------
 [[ -z $SRC ]] && { echo "Error: -s SRC is required"; usage; exit 1; }
 [[ -z $DST ]] && { echo "Error: -d DST is required"; usage; exit 1; }
-[[ ! -e $SRC ]] && { echo "Error: source '$SRC' does not exist"; exit 1; }
+# [[ ! -e $SRC ]] && { echo "Error: source '$SRC' does not exist"; exit 1; }
 
 # ---------- Work files ----------
 LIST_FILE=$(mktemp /tmp/rsync.list.XXXXXX)

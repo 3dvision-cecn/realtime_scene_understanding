@@ -45,7 +45,6 @@ def generate_label_map(dataset):
         vn_list = sorted(vn_list)
         print('# of action= {}'.format(len(vn_list)))
         mapping_vn2act = {vn: i for i, vn in enumerate(vn_list)}
-        print('mapping_vn2act', mapping_vn2act)
         labels = [list(set(mapping_vn2narration[vn_list[i]])) for i in range(len(mapping_vn2act))]
         # shape of the labels
         # print(len(labels), len(labels[0]), labels[0])
@@ -62,7 +61,6 @@ def generate_label_map(dataset):
                 narration = row[0][5:]
                 labels.append(narration)
         mapping_vn2act = {vn: i for i, vn in enumerate(vn_list)}
-        print(labels[:5])
     elif dataset == 'egtea':
         print("=> preprocessing egtea action label space")
         labels = []
@@ -73,7 +71,6 @@ def generate_label_map(dataset):
                 labels.append(narration.replace('_', ' ').lower())
                 # labels.append(narration)
         mapping_vn2act = {label: i for i, label in enumerate(labels)}
-        print(len(labels), labels[:5])
     else:
         raise NotImplementedError
     return labels, mapping_vn2act

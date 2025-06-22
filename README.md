@@ -24,7 +24,7 @@ git lfs install
 git pull
 # unzip and put into dataset/recordings/train/01
 ```
-Downloading HD-Epic
+Downloading HD-EPIC
 ```
 # use the faster pipeline/utils/hd-epic-downloader.py for parallel downloading
 python pipeline/utils/hd-epic-downloader.py dataset --vrs --slam-gaze --participants 1
@@ -40,4 +40,10 @@ docker pull nemantor31/pipeline
 ./docker/run_docker_iphone.bash
 # run the pipeline with the HD-EPIC dataset and get rerun visualisations
 ./docker/run_docker_epic.bash
+```
+
+# Training the EK-100 Action Recognition Network
+```
+# run the full processing on the data and get hf5 files
+python training/training.py --dataset_dir=????
 ```

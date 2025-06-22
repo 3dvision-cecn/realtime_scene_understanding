@@ -87,34 +87,6 @@ class VRSLoader:
             else:
                 raise ValueError(f"Slam directory does not exist and no zip file found at: {zip_path}")
             
-        # HAND TRACKING
-
-        # base_name = os.path.splitext(os.path.basename(self.project_name))[0]
-        # self.hand_tracking_folder = self.cfg.vrs_slam_mapping_json + self.person_id + "/GAZE_HAND/" + "mps_" + base_name + "_vrs.zip"
-        # self.hand_tracking_folder_unzipped = self.cfg.vrs_slam_mapping_json + self.person_id + "/GAZE_HAND/" + "mps_" + base_name + "_vrs"
-
-        # # Check if the hand‐tracking zip exists
-        # if os.path.isfile(self.hand_tracking_folder):
-        #     # Compute extraction directory (remove .zip suffix)
-        #     self.extract_dir = os.path.dirname(self.hand_tracking_folder) 
-        #     # Make sure it exists
-        #     os.makedirs(self.extract_dir, exist_ok=True)
-        #     # Extract all files
-        #     with zipfile.ZipFile(self.hand_tracking_folder, "r") as zf:
-        #         zf.extractall(self.extract_dir)
-        #     # Update the folder path to the extracted directory
-        #     self.hand_tracking_folder = self.extract_dir
-        #     print(f"Extracted hand‐tracking data to {self.extract_dir}")
-
-        # self.hand_tracking_result_path = self.hand_tracking_folder_unzipped + "/hand_tracking/wrist_and_palm_poses.csv"
-
-        # self.hand_tracking_results = mps.hand_tracking.read_wrist_and_palm_poses(
-        #     self.hand_tracking_result_path
-        # )
-
-        # print(f"Number of hand tracking results: {len(self.hand_tracking_results)}")
-
-        
         # paramters
         self.time_domain = TimeDomain.DEVICE_TIME  # query data based on host time
         self.option = TimeQueryOptions.CLOSEST # get data whose time [in TimeDomain] is CLOSEST to query time
@@ -152,7 +124,6 @@ class VRSLoader:
 
         self.device_trajectory = [it.transform_world_device.translation()[0] for it in trajectory_data][0::80]
         self.point_cloud = self.mps_data_provider.get_semidense_point_cloud()
-        # self.point_observations = self.mps_data_provider.get_semidense_observations()
 
         # get directly from camera visible keypoints
         self.points_and_observations_manager = PointsAndObservationsManager.from_mps_data_provider(
@@ -169,27 +140,15 @@ class VRSLoader:
             .sensor_serial
         )
 
-
-        # filter the pointcloud
-        # filtered_point_cloud = filter_points_from_confidence(self.point_cloud, self.threshold_invdep, self.threshold_dep)
-        # downsampled_points_cloud = filter_points_from_count(filtered_point_cloud, self.max_points_per_pcd)
-        # Retrieve point positions
-        # self.points_position = np.stack([it.position_world for it in downsampled_points_cloud])
-        # N = self.points_position.shape[0]
-        # self.points_world_h = np.hstack([self.points_position, np.ones((N, 1), dtype=np.float32)])  # (N,4)
-
         print(f"VRS data loaded from {self.vrs_path}")
         print(f"Number of images in the VRS data: {self.num_images}")
         print(f"Start time: {self.start_time}, End time: {self.end_time}")
-        # print(f"Point cloud contains {len(self.points_position)} points")
 
 
         self.omni_dcnet = DepthPredictor(checkpoint_path="conf/checkpoints/omni_dc/modelv1.1_best_72epochs.pt",
                                           da_path="conf/checkpoints/omni_dc/depth_anything_v2_vitl.pth",
                                           device=self.device)
 
-
-        print("Finished loading the depth pro file")
 
         if self.unzipped:
             print(f"Unzipped slam data is no longer needed, deleting {self.slam_dir}...")

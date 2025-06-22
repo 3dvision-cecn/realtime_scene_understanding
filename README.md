@@ -17,10 +17,17 @@ dataset/
 ```
 
 # How to Download the Dataset
+Downloading the sample iPhone data
 ```
 # Download Sample iPhone data
-
-
+git lfs install
+git pull
+# unzip and put into dataset/recordings/train/01
+```
+Downloading HD-Epic
+```
+# use the faster pipeline/utils/hd-epic-downloader.py for parallel downloading
+python pipeline/utils/hd-epic-downloader.py dataset --vrs --slam-gaze --participants 1
 ```
 
 # How to Run Docker
@@ -30,5 +37,7 @@ docker build --ssh default=${SSH_AUTH_SOCK} -t pipeline:latest docker/
 # directly pull from docker io
 docker pull nemantor31/pipeline
 # run the pipeline with the iPhone dataset and get rerun visualisations
-./docker/run_docker.bash
+./docker/run_docker_iphone.bash
+# run the pipeline with the HD-EPIC dataset and get rerun visualisations
+./docker/run_docker_epic.bash
 ```

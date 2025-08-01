@@ -201,6 +201,8 @@ class R3D_loader:
             o3d.geometry.Image(color),
             o3d.geometry.Image(depth * 1000),  # convert depth to mm
             convert_rgb_to_intensity=False,
+            depth_trunc= 10000.0
+
         )
 
         # backproject to a point cloud and transform into world coords

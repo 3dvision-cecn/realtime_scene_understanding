@@ -75,6 +75,17 @@ def main(cfg, start_rerun: bool = False, device = "cuda"):
     if cfg.pipeline.record_seg:
         os.makedirs(SEGMENT_OUTPUT_DIR, exist_ok=True)
 
+    time_analysis = {}
+    time_analysis["frame_load"] = []
+    time_analysis["hand_detection"] = []
+    time_analysis["segmentation_detection"] = []
+    time_analysis["embed_generation"] = []
+    time_analysis["graph_generation"] = []
+    time_analysis["training_generator"] = []
+    time_analysis["total_time"] = []
+    
+    testing_it = 10
+
 
     itr = 0
     # processing loop
@@ -83,7 +94,7 @@ def main(cfg, start_rerun: bool = False, device = "cuda"):
         start_time = time.perf_counter()
         frame_rgb, depth, pose, timestamp = video_loader.next_frame()
         load_time = time.perf_counter() - start_time
-        print(f"Frame load time: {load_time:.3f} seconds")
+        time_analysis["frame_load"].append(load_time)
 
         if frame_rgb is None or depth is None or pose is None:
             print("No more frames available, exiting.")
@@ -94,6 +105,9 @@ def main(cfg, start_rerun: bool = False, device = "cuda"):
         if pixel_indexed_pcd is None:
             print("No pixel indexed point cloud available, skipping frame.")
             continue
+
+        # if itr >= testing_it:
+        #     break
 
 
         # Tag this log with an integer timeline for easy scrubbing
@@ -106,28 +120,42 @@ def main(cfg, start_rerun: bool = False, device = "cuda"):
         # raw frame
         rr.log("raw_video/frame", rr.Image(img).compress(jpeg_quality=85))
 
+        # if hd_epic, log the psuedo depth map
+        if cfg.dataset == "hd_epic":
+            pseudo_depth = video_loader.pseudo_depth
+            # nan to zero
+            pseudo_depth = np.nan_to_num(pseudo_depth, nan=0.0)
+
+            pseudo_depth_vis = img.copy()
+            nonzero_indices = np.nonzero(pseudo_depth)
+            for y, x in zip(*nonzero_indices):
+                # apply colormap to pseudo depth
+                depth_val = np.uint8(pseudo_depth[y, x] * 255)
+                color = cv2.applyColorMap(np.array([[depth_val]], dtype=np.uint8), cv2.COLORMAP_JET)[0, 0].tolist()
+                cv2.circle(pseudo_depth_vis, (x, y), 6, color, -1)
+
+
+            rr.log("PseudoDepth", rr.Image(pseudo_depth_vis))
+
+
         # Hand detection
-        t0 = time.time()
+        hand_detection_start_time = time.perf_counter()
         hand_data, hd_img = hand_detection.detect_hands(
             img, pixel_indexed_pcd, timestamp_ms=int(timestamp * 1000)
         )
-        t1 = time.time()
+        time_analysis["hand_detection"].append(time.perf_counter() - hand_detection_start_time)
+
         rr.log("hand_detection/annotated_image", rr.Image(hd_img))
         
 
 
-        t0 = time.perf_counter()
-
         # Segmentation
-        t0 = time.time()
         objects, seg_img, hand_data = segmentation.segment(
             img, pixel_indexed_pcd, hand_data, timestamp_ms=int(timestamp * 1000), iteration=itr
         )
-        t1 = time.time()
+        time_analysis["segmentation_detection"].append(segmentation.det_seg_time)
+        time_analysis["embed_generation"].append(segmentation.embedding_generation_time)
 
-        print(f"Segmentation time: {t1 - t0:.3f} seconds")
-
-        t1 = time.perf_counter()
 
         rr.log("segmentation/annotated_image", rr.Image(seg_img))
 
@@ -191,15 +219,24 @@ def main(cfg, start_rerun: bool = False, device = "cuda"):
 
 
 
-
+        graph_generator_start_time = time.perf_counter()
         graph = graph_generator.generate_graph(img, objects, hand_data)
+        time_analysis["graph_generation"].append(time.perf_counter() - graph_generator_start_time)
+
+        time_analysis["total_time"].append(time.perf_counter() - start_time)
 
         # Training generator
+        training_generator_start_time = time.perf_counter()
         training_generator.add_sequence(img, graph)
+        time_analysis["training_generator"].append(time.perf_counter() - training_generator_start_time)
 
         end_time = time.perf_counter()
         print(f"Processing time for frame {itr}: {end_time - start_time:.3f} seconds")
         # Log the processing time
+
+    # print the average processing time
+    for key, times in time_analysis.items():
+        print(f"Average time for {key}: {np.mean(times):.3f} seconds over {len(times)} frames")
 
 import argparse
 

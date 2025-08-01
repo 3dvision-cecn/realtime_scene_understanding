@@ -103,6 +103,7 @@ class Segmentation:
         """Returns (masks, annotated_img)."""
         # clear previous objects, we are doing it one-shot fashion
         self.objects.clear()
+        start_time = time.perf_counter()
 
 
         # run yolo with ver low confidence to get all of the boxes and show the boxes with opencv
@@ -131,7 +132,6 @@ class Segmentation:
         sam2_points.append(points)
 
         # give the list of points to the SAM-2 predictor
-        t0 = time.time()
         with torch.autocast(self.device, torch.bfloat16):
             self.sam = SAM2AutomaticMaskGenerator(
                     self.sam_net,
@@ -146,8 +146,10 @@ class Segmentation:
                 )
             # bf16 image
             masks = self.sam.generate(image)
-        t1 = time.time()
-        print(f"Time taken for SAM-2 segmentation: {t1 - t0:.2f} seconds")
+
+
+        self.det_seg_time = time.perf_counter() - start_time
+
 
         # # visualize the masks on the image
         annotated_img = image.copy()
@@ -162,7 +164,7 @@ class Segmentation:
             annotated_img = cv2.addWeighted(overlay, 0.5, annotated_img, 0.5, 0)
 
 
-        t0 = time.time()
+        embedding_generation_start = time.perf_counter()
         pcd_segments = []
         for mask in masks:
             segm = mask['segmentation']
@@ -245,14 +247,13 @@ class Segmentation:
             obj = Object(name, centroid, bbox, segm, pcd=pcd_segment, obb=obb, embedding=embedding)
             self.objects.append(obj)
 
-        t1 = time.time()
-        # print(f"Time taken for PCD and VLM processing: {t1 - t0:.2f} seconds")
-
+        self.embedding_generation_time = time.perf_counter() - embedding_generation_start
+        
         # create an annotated image
         for obj in self.objects:
             x, y, w, h = map(int, obj.bbox)
             cv2.rectangle(annotated_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.putText(annotated_img, obj.name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            # cv2.putText(annotated_img, obj.name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
         return self.objects, annotated_img, hand_data
 

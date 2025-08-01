@@ -18,6 +18,7 @@ from projectaria_tools.core.mps.utils import ( # Aria MPS utilities
 from projectaria_tools.core.calibration import (
     CameraCalibration,
     distort_by_calibration,
+    distort_depth_by_calibration
 )
 from projectaria_tools.core import calibration
 from .points_and_observation_manager import PointsAndObservationsManager, OnlineRgbCameraHelper
@@ -261,6 +262,45 @@ class VRSLoader:
             return None, None
 
         return undistorted_image, image_tuple[1].capture_timestamp_ns
+    
+    def undistort_depth(self, depth_image: np.ndarray, stream_id: StreamId) -> np.ndarray:
+        # Retrieve the camera calibration attached to the Image (stream_id)
+        camera_calibration = self.get_camera_calibration(stream_id)
+
+        # pad the depth image to match the undistorted image size
+        image_size = camera_calibration.get_image_size()
+        if depth_image.shape[0] != image_size[1] or depth_image.shape[1] != image_size[0]:
+            # pad the depth image to the size of the undistorted image
+            depth_image = cv2.copyMakeBorder(
+                depth_image, 
+                0, 
+                image_size[1] - depth_image.shape[0], 
+                0, 
+                image_size[0] - depth_image.shape[1], 
+                cv2.BORDER_CONSTANT, 
+                value=0
+            )
+
+        # Building the target calibration (Pinhole camera) to get the undistorted image
+        focal_lengths = camera_calibration.get_focal_lengths()
+        image_size = camera_calibration.get_image_size()
+        pinhole_calib = calibration.get_linear_camera_calibration(
+            image_size[0], image_size[1], focal_lengths[0]
+        )
+
+        # Compute the actual undistorted depth image (pixel sampling by using ray projection/reprojection)
+        try:
+            undistorted_depth = distort_depth_by_calibration(
+                depth_image, pinhole_calib, camera_calibration
+            )
+        except:
+            print("Failed to undistort depth image")
+            return None
+        
+        # crop back to the cropped image size
+        undistorted_depth = undistorted_depth[self.crop_size:-self.crop_size, self.crop_size:-self.crop_size]
+
+        return undistorted_depth
 
 
     def get_pose(self, time_ns: int) -> np.ndarray:
@@ -437,9 +477,10 @@ class VRSLoader:
                 current = pseudo_depth[v, u]
                 if np.isnan(current) or depth_val < current:
                     pseudo_depth[v, u] = depth_val
-        print(f"Created pseudo depth: max {np.nanmax(pseudo_depth):.2f}, min {np.nanmin(pseudo_depth):.2f}, valid {np.sum(~np.isnan(pseudo_depth))}")
 
+        # undistrort the depth image
         psuedo_depth_zero = np.nan_to_num(pseudo_depth, nan=0)
+
         with torch.autocast(self.device, torch.bfloat16):
             depth = self.omni_dcnet(cropped_image, psuedo_depth_zero)
 

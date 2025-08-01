@@ -52,7 +52,18 @@ class TrainingGenerator():
         os.makedirs(self.sample_dir, exist_ok=True)
 
         self.sequence_count = 0
+        self._frames_already_done = 0
+                # ── NEW: pick up where we stopped ────────────────────────────────
+        try:        
+            existing = [
+                f for f in os.listdir(self.sample_dir)
+                if f.startswith("sample_") and f.endswith(".h5")
+            ]
+            self.sequence_count = len(existing)          # next sample id
+            self._frames_already_done = self.sequence_count * 16
 
+        except FileNotFoundError:
+            pass
 
     def add_sequence(self, image, graph):
         """
@@ -95,7 +106,7 @@ class TrainingGenerator():
 
         for img_idx, (_, graph) in enumerate(self.sequence):
 
-            if getattr(graph["object"], "x", None) is None:
+            if graph is None or getattr(graph["object"], "x", None) is None:
                 print(f"Warning: graph['object'].x is None at frame {img_idx}  emppty graph")
                 # make an empty graph
                 frames_grp_data.append({

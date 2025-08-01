@@ -20,6 +20,7 @@ segmentation:
   zero_shot: True
   debug_dir: 
   vocab_path: 
+  hand_feat_mode: concat     # image | text | concat | pose
 
 graph_generator:
 

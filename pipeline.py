@@ -7,6 +7,7 @@ import cv2
 from hydra.core.global_hydra import GlobalHydra
 import datetime, os
 import time
+from pathlib import Path
 
 from video_loader import VideoLoader
 from hand_detection_hamer import HandDetection
@@ -45,7 +46,9 @@ def main(cfg, start_rerun: bool = False):
 
     # training generator
     training_generator = TrainingGenerator(cfg)
-
+    # ── NEW: fast-forward the video loader ──────────────────────────────
+    for _ in range(training_generator._frames_already_done):
+        video_loader.next_frame()
     # ---- Reduce to ~10 FPS ----
     last_process_ts = -float('inf')
     target_interval = 1.0 / 4.0  # seconds between frames
@@ -165,6 +168,7 @@ def main(cfg, start_rerun: bool = False):
                     radii=0.01,
                 ),
             )
+                 
 
 
 
@@ -219,13 +223,15 @@ if __name__ == "__main__":
             cfg = compose(config_name="config")
 
             # create a randoom folder in dataset/graph_samplesXXXXX
-            cfg.training_generator.path = f"dataset/graph_samples{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            cfg.training_generator.path = f"dataset/graph_samples_clip_concat" #{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
             # first process the training videos
             for folder in train_folders:
+        
                 cfg.video.path = folder
                 print(f"Processing training folder: {folder}")
                 main(cfg=cfg)
+                
                 rr.Clear(recursive=True)
                 # empty the cuda cache and free up cuda memory
                 torch.cuda.empty_cache()

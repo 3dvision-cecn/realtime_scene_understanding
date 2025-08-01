@@ -17,10 +17,28 @@ import argparse
 from sklearn.metrics import confusion_matrix, top_k_accuracy_score
 import seaborn as sns
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from tgnn_model import GraphClassifier
 from data_loader import GraphDataset
 from vn_mappings import generate_label_map, load_vn_mappings
+
+VERB_TEXT  = pd.read_csv('./conf/ek100/EPIC_100_verb_classes.csv')['key'].tolist()
+NOUN_TEXT  = pd.read_csv('./conf/ek100/EPIC_100_noun_classes.csv')['key'].tolist()
+
+label, mapping_vn2act = generate_label_map('ek100_cls')
+mapping_act2v = {i: int(vn.split(':')[0]) for (vn, i) in mapping_vn2act.items()}
+mapping_act2n = {i: int(vn.split(':')[1]) for (vn, i) in mapping_vn2act.items()}
+
+
+def id2words(act_id: int):
+    """
+    Convert a composite action-id (0-3805) into human-readable
+    (verb, noun) strings, e.g.  47 -> ('cut', 'onion').
+    """
+    v_id = mapping_act2v[act_id]
+    n_id = mapping_act2n[act_id]
+    return VERB_TEXT[v_id], NOUN_TEXT[n_id]
 
 
 def plot_confusion_matrix(true_labels, pred_labels, label_type="Verb"):
@@ -55,6 +73,121 @@ def log_confusion_matrix(true_labels, pred_labels, class_names, label_type="Verb
     wandb.log({f"{label_type}_Confusion_Matrix": wandb.Image(fig)}, step=epoch)
     plt.close(fig)
 
+# def wandb_confusion(y_true: list[int],
+#                     y_pred: list[int],
+#                     class_names: list[str],
+#                     tag: str,
+
+
+def wandb_confusion(
+        y_true,                 # list[int]
+        y_pred,                 # list[int]
+        class_names,            # list[str]
+        tag,                    # "verb" | "noun"
+        epoch,                  # int
+        split                   # "train" | "val"
+    ):
+    """
+    Logs an un-normalised confusion matrix to WandB.
+    """
+    cm_plot = wandb.plot.confusion_matrix(
+        probs=None,
+        y_true=y_true,
+        preds=y_pred,
+        class_names=class_names,
+        title=f"{split.capitalize()} {tag.capitalize()} ConfMatrix (ep{epoch})",
+    )
+    #wandb.log({f"{split}/{tag}_conf": cm_plot}, step=epoch)
+
+def plot_label_distribution(
+        dataset,
+        mapping_act2v,
+        mapping_act2n,
+        verb_text,
+        noun_text,
+        topk=30,
+        split="val",
+        log_to_wandb=False,
+        epoch=0):
+
+    verb_counts = np.zeros(len(verb_text), dtype=int)
+    noun_counts = np.zeros(len(noun_text), dtype=int)
+
+    # ---- iterate over the dataset once ----
+    for sample in dataset:
+        # sample is a HeteroData; the action label is in sample.y
+        y = sample.y                # shape (num_classes,) one-hot OR scalar
+        if y.dim() > 0:             # one-hot → take argmax
+            act_id = int(y.argmax().item())
+        else:                       # already a scalar
+            act_id = int(y.item())
+
+        v_id = mapping_act2v[act_id]
+        n_id = mapping_act2n[act_id]
+        verb_counts[v_id] += 1
+        noun_counts[n_id] += 1
+
+    # ------------- helper to plot -------------
+    def bar_plot(counts, cls_names, title):
+        idx = np.argsort(-counts)[:topk]   # most frequent first
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.barh([cls_names[i] for i in idx][::-1],
+                counts[idx][::-1])
+        ax.set_xlabel("Frequency")
+        ax.set_title(title)
+        ax.invert_yaxis()
+        plt.tight_layout()
+        return fig
+
+    verb_fig = bar_plot(verb_counts, verb_text,
+                        f"{split.capitalize()} Verb Frequency (top {topk})")
+    noun_fig = bar_plot(noun_counts, noun_text,
+                        f"{split.capitalize()} Noun Frequency (top {topk})")
+    plt.show()          # if running interactively
+
+    if log_to_wandb:
+        wandb.log({f"{split}/verb_freq": wandb.Image(verb_fig),
+                   f"{split}/noun_freq": wandb.Image(noun_fig)},
+                  step=epoch)
+
+
+def log_top_bottom_classes(true_ids, pred_ids, class_names, label_type="Verb", epoch=0, split="val", topk=15):
+    true_ids = np.array(true_ids)
+    pred_ids = np.array(pred_ids)
+
+    class_correct = np.zeros(len(class_names))
+    class_total = np.zeros(len(class_names))
+
+    for t, p in zip(true_ids, pred_ids):
+        class_total[t] += 1
+        if t == p:
+            class_correct[t] += 1
+
+    class_acc = class_correct / (class_total + 1e-6)  # avoid div by zero
+
+    sorted_indices = np.argsort(class_acc)
+    best_indices = sorted_indices[-topk:][::-1]
+    worst_indices = sorted_indices[:topk]
+
+    def bar_plot(indices, title):
+        fig, ax = plt.subplots(figsize=(12, 6))
+        labels = [class_names[i] for i in indices]
+        scores = [class_acc[i] for i in indices]
+        ax.barh(labels, scores)
+        ax.set_xlim([0, 1])
+        ax.invert_yaxis()
+        ax.set_title(f"{split.capitalize()} {label_type} Accuracy - {title} (Epoch {epoch})")
+        plt.tight_layout()
+        return fig
+
+    wandb.log({
+        f"{split}/{label_type}_Top{topk}": wandb.Image(bar_plot(best_indices, f"Top {topk}")),
+        f"{split}/{label_type}_Bottom{topk}": wandb.Image(bar_plot(worst_indices, f"Bottom {topk}"))
+    }, step=epoch)
+
+
+
+
 
 def train_fn(model, train_loader, optimizer, criterion, device, mapping_vn2act):
     model.train()
@@ -83,9 +216,19 @@ def train_fn(model, train_loader, optimizer, criterion, device, mapping_vn2act):
         #         batch.x_dict[key] = batch.x_dict[key] + torch.randn_like(batch.x_dict[key]) * noise_std
 
 
-        out = model(batch.x_dict, batch.edge_index_dict, 
-                    {'relation': batch['object', 'relation', 'object'].edge_attr}, 
-                    batch)
+        # out = model(batch.x_dict, batch.edge_index_dict,  #ablation study
+        #             {'relation': batch['object', 'relation', 'object'].edge_attr}, 
+        #             batch)
+        
+        edge_attr_dict = {
+            'relation': None ,#getattr(batch['object', 'relation', 'object'], 'edge_attr', None),
+            'temporal': getattr(batch['object', 'temporal', 'object'], 'edge_attr', None)
+        }
+
+        out = model(batch.x_dict, batch.edge_index_dict, edge_attr_dict, batch)
+
+        
+
 
         loss = criterion(out, batch.y)
 
@@ -161,12 +304,16 @@ def train_fn(model, train_loader, optimizer, criterion, device, mapping_vn2act):
 
     avg_loss = total_loss / len(train_loader)
 
-    return avg_loss, acc1, acc5, verb_acc, noun_acc
+    return avg_loss, acc1, acc5, verb_acc, noun_acc, true_verb_ids, pred_verb_ids, true_noun_ids, pred_noun_ids
 
+def safe_attr(storage, name):
+    return getattr(storage, name, None)        # returns None if field missing
 
-def eval_fn(model, val_loader, criterion, device, mapping_vn2act):
+def eval_fn(model, val_loader, criterion, device, mapping_vn2act, dump_mistakes_path: str | None = None, log_to_wandb: bool = True, epoch: int | None = None,):
+    
     model.eval()
     total_loss = 0
+    
 
     mapping_act2v = {i: int(vn.split(':')[0]) for (vn, i) in mapping_vn2act.items()}
     mapping_act2n = {i: int(vn.split(':')[1]) for (vn, i) in mapping_vn2act.items()}
@@ -179,15 +326,37 @@ def eval_fn(model, val_loader, criterion, device, mapping_vn2act):
     true_verb_ids = []
     true_noun_ids = []
 
+    mispredictions = []
+
+    if log_to_wandb:
+        wb_table = wandb.Table(
+            columns=[
+                "graph_id",
+                "true_act",
+                "pred_act",
+                "true_verb",
+                "pred_verb",
+                "true_noun",
+                "pred_noun",
+            ]
+        )
+
+
     with torch.no_grad():
         for batch in val_loader:
             batch = batch.to(device)
-            out = model(
-                batch.x_dict,
-                batch.edge_index_dict,
-                {'relation': batch['object', 'relation', 'object'].edge_attr},
-                batch
-            )
+            edge_attr_dict = {
+                'relation': safe_attr(batch['object','relation','object'], 'edge_attr'),
+                'temporal': safe_attr(batch['object','temporal','object'], 'edge_attr'),
+            }
+
+            out = model(batch.x_dict, batch.edge_index_dict, edge_attr_dict, batch)
+            # out = model(
+            #     batch.x_dict,
+            #     batch.edge_index_dict,
+            #     {'relation': batch['object', 'relation', 'object'].edge_attr},
+            #     batch
+            # )
 
             loss = criterion(out, batch.y)
             total_loss += loss.item()
@@ -197,7 +366,11 @@ def eval_fn(model, val_loader, criterion, device, mapping_vn2act):
                 all_preds.append(out[i].detach().cpu())
                 all_targets.append(torch.argmax(batch.y[i].detach().cpu()))
 
-            preds = out.argmax(dim=1)
+            preds = out.argmax(dim=1) #tensor of shape (N,)
+            true_tensor  = batch.y.argmax(dim=1) 
+
+            preds_np = preds.detach().cpu().numpy()
+            true_np  = true_tensor.detach().cpu().numpy()
             for pred_idx, true_vec in zip(preds.cpu().numpy(), batch.y.cpu().numpy()):
                 true_idx = true_vec.argmax()
                 # print("True idx: ", true_idx)
@@ -210,6 +383,43 @@ def eval_fn(model, val_loader, criterion, device, mapping_vn2act):
                 pred_noun_ids.append(pred_noun)
                 true_verb_ids.append(true_verb)
                 true_noun_ids.append(true_noun)
+
+
+            all_preds.extend(out.detach().cpu())
+            all_targets.extend(true_np)
+            #graph/sample ids (customise if needed)
+            graph_ids = getattr(batch, "graph_id", torch.arange(batch.num_graphs, device=batch.y.device))
+            graph_ids = graph_ids.detach().cpu().numpy()
+      
+
+            for g_id, t, p in zip(graph_ids, true_np, preds_np):
+                # verb / noun conversion
+                true_verb, pred_verb = mapping_act2v[t], mapping_act2v[p]
+                true_noun, pred_noun = mapping_act2n[t], mapping_act2n[p]
+
+                # accumulate for per-label accuracy
+                true_verb_ids.append(true_verb)
+                true_noun_ids.append(true_noun)
+                pred_verb_ids.append(pred_verb)
+                pred_noun_ids.append(pred_noun)
+
+                # ---- mis-prediction capture ----
+                true_v_word, true_n_word = id2words(t)
+                pred_v_word, pred_n_word = id2words(p)
+                
+                if t != p:
+                    row = {
+                        "graph_id": int(g_id),
+                        "true_act": int(t),
+                        "pred_act": int(p),
+                        "true_verb": true_v_word,
+                        "pred_verb": pred_v_word,
+                        "true_noun": true_n_word,
+                        "pred_noun": pred_n_word,
+                    }
+                    mispredictions.append(row)
+                    if log_to_wandb:
+                        wb_table.add_data(*row.values())    
 
     all_preds = torch.stack(all_preds).numpy()
     all_targets = np.array(all_targets)
@@ -231,6 +441,17 @@ def eval_fn(model, val_loader, criterion, device, mapping_vn2act):
     noun_acc = (np.array(pred_noun_ids) == np.array(true_noun_ids)).sum() / len(true_noun_ids)
     avg_loss = total_loss / len(val_loader) if len(val_loader) > 0 else 0
 
+    # === optional outputs ===
+    if dump_mistakes_path:
+        os.makedirs(os.path.dirname(dump_mistakes_path), exist_ok=True)
+        with open(dump_mistakes_path, "w") as f:
+            json.dump(mispredictions, f, indent=2)
+
+    if log_to_wandb and len(mispredictions) > 0:
+        wandb.log({"misclassified_samples": wb_table}, step=epoch or 0)
+
+    
+
     return avg_loss, acc1, acc5, verb_acc, noun_acc, true_verb_ids, pred_verb_ids, true_noun_ids, pred_noun_ids
 
 
@@ -251,6 +472,7 @@ def main(args):
     mapping_act2v = {i: int(vn.split(':')[0]) for (vn, i) in mapping_vn2act.items()}
     mapping_act2n = {i: int(vn.split(':')[1]) for (vn, i) in mapping_vn2act.items()}
 
+    
 
     BATCH_SIZE = args.batch_size
     EPOCHS = args.epochs
@@ -258,27 +480,30 @@ def main(args):
 
     print(f"Num actions: {len(mapping_vn2act)}")
 
-    model = GraphClassifier(3072, 64, 4, len(mapping_vn2act)).to(device)
+    model = GraphClassifier(3072, 512, 4, len(mapping_vn2act)).to(device) #512 for clip, 3072 for am-radio
     optimizer = optim.Adam(model.parameters(), lr=LR)
     criterion = nn.CrossEntropyLoss()
 
     train_dataset = GraphDataset(
-        data_dir=args.dataset_dir + "/train",
+        data_dir=args.dataset_dir,
         embedder=embedder,
         metadata_csv=train_csv,
-        mapping_vn2act=mapping_vn2act
+        mapping_vn2act=mapping_vn2act,
+        is_train=True,
     )
     val_dataset = GraphDataset(
-        data_dir=args.dataset_dir + "/val",
+        data_dir=args.dataset_dir,
         embedder=embedder,
         metadata_csv=train_csv,
-        mapping_vn2act=mapping_vn2act
+        mapping_vn2act=mapping_vn2act,
+        is_train=False,
     )
 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
     wandb.init(project="ar_graph", 
+            group="concat_clip_experiments",    
             name=f"tgnn_{time.time()}", 
             config={
                 "learning_rate": LR, 
@@ -290,15 +515,52 @@ def main(args):
 
     os.makedirs("logs/", exist_ok=True)
     model_output = os.path.join("logs/", 'best_model.pt')
+    plot_label_distribution(
+    train_dataset,
+    mapping_act2v,
+    mapping_act2n,
+    VERB_TEXT,
+    NOUN_TEXT,
+    split="train",
+    log_to_wandb=True,  # optional
+    epoch=0)
+
 
     best_valid_loss = np.Inf
     since = time.time()
 
     for epoch in range(EPOCHS):
-        avg_train_loss, train_acc1, train_acc5, train_verb_acc, train_noun_acc = train_fn(
+        eval_kwargs = dict(
+            dump_mistakes_path=f"logs/mispreds_epoch{epoch:03d}.json",
+            log_to_wandb=True,          # set False if you don’t want a WandB table
+            epoch=epoch,                # so the table is logged with the same step
+        )
+
+        #avg_train_loss, train_acc1, train_acc5, train_verb_acc, train_noun_acc = train_fn(
+        #    model, train_loader, optimizer, criterion, device, mapping_vn2act)
+        
+        (avg_train_loss, train_acc1, train_acc5,
+        train_verb_acc, train_noun_acc,
+        true_v_train, pred_v_train, true_n_train, pred_n_train) = train_fn(
             model, train_loader, optimizer, criterion, device, mapping_vn2act)
-        avg_val_loss, val_acc1, val_acc5, val_verb_acc, val_noun_acc, true_verb_ids, pred_verb_ids, true_noun_ids, pred_noun_ids = eval_fn(
-            model, val_loader, criterion, device, mapping_vn2act)
+
+        # avg_val_loss, val_acc1, val_acc5, val_verb_acc, val_noun_acc, true_verb_ids, pred_verb_ids, true_noun_ids, pred_noun_ids = eval_fn(
+        #     model, val_loader, criterion, device, mapping_vn2act, **eval_kwargs)
+        
+        (avg_val_loss, val_acc1, val_acc5,
+        val_verb_acc, val_noun_acc,
+        true_v_val,  pred_v_val,
+        true_n_val,  pred_n_val) = eval_fn(
+            model, val_loader, criterion, device, mapping_vn2act,
+            dump_mistakes_path=f"logs/mispreds_epoch{epoch:03d}.json",
+            log_to_wandb=True,
+            epoch=epoch,
+        )
+
+        log_top_bottom_classes(true_v_val, pred_v_val, VERB_TEXT, label_type="Verb", epoch=epoch, split="val")
+        log_top_bottom_classes(true_n_val, pred_n_val, NOUN_TEXT, label_type="Noun", epoch=epoch, split="val")
+
+
 
         # if avg_val_loss < best_valid_loss:
         #     torch.save(model.state_dict(), model_output)
@@ -317,10 +579,18 @@ def main(args):
             "val/verb_acc@1": val_verb_acc,
             "val/noun_acc@1": val_noun_acc
         }, step=epoch)
-
+        
         print(f"Epoch {epoch+1}: " , f"TRAIN Loss {avg_train_loss:.3f} | Acc@1 {train_acc1:.3f} | Acc@5 {train_acc5:.3f} | V.Acc {train_verb_acc:.3f} | N.Acc {train_noun_acc:.3f} VAL Loss {avg_val_loss:.3f} | Acc@1 {val_acc1:.3f} | Acc@5 {val_acc5:.3f} | Verb Acc {val_verb_acc:.3f} | N.Acc {val_noun_acc:.3f}")
 
-        # Log confusion matrices
+        # ----- CONFUSION MATRICES  ---------------------------------------
+        # Train split
+        wandb_confusion(true_v_train, pred_v_train, VERB_TEXT,  tag="verb", epoch=epoch, split="train")
+        wandb_confusion(true_n_train, pred_n_train, NOUN_TEXT,  tag="noun", epoch=epoch, split="train")
+
+        # Validation split
+        wandb_confusion(true_v_val,   pred_v_val,   VERB_TEXT,  tag="verb", epoch=epoch, split="val")
+        wandb_confusion(true_n_val,   pred_n_val,   NOUN_TEXT,  tag="noun", epoch=epoch, split="val")
+            # Log confusion matrices
         # verb_class_names = [verb_mapping[v] if v in verb_mapping else str(v) for v in np.unique(true_verb_ids)]
         # noun_class_names = [noun_mapping[n] if n in noun_mapping else str(n) for n in np.unique(true_noun_ids)]
         # log_confusion_matrix(true_verb_ids, pred_verb_ids, verb_class_names, label_type="Verb", epoch=epoch)
@@ -338,7 +608,7 @@ def main(args):
 if __name__ == "__main__":    
     argparser = argparse.ArgumentParser(description="Train a Temporal Graph Neural Network")
     argparser.add_argument("--dataset_dir", type=str,
-                           default="datasets/EK100/tests/ar_graph", 
+                           default="./dataset/graph_samples_radio_iphone", 
                            help="Path to the graph dataset directory")
     argparser.add_argument("--train_csv", type=str, 
                            default="datasets/EK100/epic-kitchens-100-annotations/EPIC_100_train.csv",
@@ -348,9 +618,9 @@ if __name__ == "__main__":
                            help="Path to the validation CSV file")
     argparser.add_argument("--batch_size", type=int, default=8, 
                            help="Batch size for training")
-    argparser.add_argument("--epochs", type=int, default=70, 
+    argparser.add_argument("--epochs", type=int, default=200, 
                            help="Number of epochs for training")
-    argparser.add_argument("--lr", type=float, default=0.001, 
+    argparser.add_argument("--lr", type=float, default=0.0001, 
                            help="Learning rate for the optimizer")
     argparser.add_argument("--model_output_dir", type=str, 
                            default="trained_models", 

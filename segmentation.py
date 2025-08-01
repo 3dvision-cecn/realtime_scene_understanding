@@ -65,6 +65,7 @@ class Segmentation:
         self.iou = cfg.iou
         self.zero_shot = cfg.zero_shot
         self.vocab_path = cfg.vocab_path
+        self.hand_feat_mode = getattr(cfg, "hand_feat_mode", "text")  # new hydra field
 
         if self.vocab_path == "":
             self.vocab_path = None
@@ -175,7 +176,7 @@ class Segmentation:
                 # skip small masks
                 continue
             # skip very large masks like the background
-            if len(pcd_segment) > 400 * 400:
+            if len(pcd_segment) > 400 * 400 and len(pcd_segment) < 10:
                 continue
 
             # skip masks that contain any hand keypoints
@@ -205,21 +206,103 @@ class Segmentation:
                 if num_collisions > 8:
                     continue
 
+
             # find the embeeding for the hands
+            # if hand_data is not None:
+            #     mode = self.hand_feat_mode   # new hydra field
+
+            #     if mode == "image":                     # ← Option A
+            #         emb_l = self.object_embedding_generator.generate_embeddings_hands(
+            #             image, hand_data.left_hand.keypoints_image
+            #         )
+            #         emb_r = self.object_embedding_generator.generate_embeddings_hands(
+            #             image, hand_data.right_hand.keypoints_image
+            #         )
+
+            #     elif mode == "text":                    # ← Option B
+            #         emb_l = self.object_embedding_generator.generate_text_embedding("left hand")
+            #         emb_r = self.object_embedding_generator.generate_text_embedding("right hand")
+
+            #     elif mode == "concat":                  # ← Option C
+            #         img_l = self.object_embedding_generator.generate_embeddings_hands(
+            #             image, hand_data.left_hand.keypoints_image
+            #         )
+            #         img_r = self.object_embedding_generator.generate_embeddings_hands(
+            #             image, hand_data.right_hand.keypoints_image
+            #         )
+            #         txt_l = self.object_embedding_generator.generate_text_embedding("left hand")
+            #         txt_r = self.object_embedding_generator.generate_text_embedding("right hand")
+            #         emb_l = np.concatenate([img_l, txt_l], axis=-1)
+            #         emb_r = np.concatenate([img_r, txt_r], axis=-1)
+                    
+            #     #left_hand_embedding = self.object_embedding_generator.generate_embeddings_hands(image, hand_data.left_hand.keypoints_image)
+            #     #right_hand_embedding = self.object_embedding_generator.generate_embeddings_hands(image, hand_data.right_hand.keypoints_image)
+            #     hand_data.left_hand.add_embedding(emb_l)
+            #     hand_data.right_hand.add_embedding(emb_r)
+            # ---------------------------------------------------------------
+            #  HAND EMBEDDINGS  – runs once per frame, outside the mask loop
+            # ---------------------------------------------------------------
             if hand_data is not None:
-                left_hand_embedding = self.object_embedding_generator.generate_embeddings_hands(image, hand_data.left_hand.keypoints_image)
-                right_hand_embedding = self.object_embedding_generator.generate_embeddings_hands(image, hand_data.right_hand.keypoints_image)
-                hand_data.left_hand.add_embedding(left_hand_embedding)
-                hand_data.right_hand.add_embedding(right_hand_embedding)
-                
+                has_left  = len(hand_data.left_hand.keypoints_image)  > 0
+                has_right = len(hand_data.right_hand.keypoints_image) > 0
+
+                if has_left or has_right:
+                    mode = self.hand_feat_mode  # "image" | "text" | "concat"
+
+                    # ---------- LEFT ----------
+                    if has_left:
+                        if mode == "image":
+                            emb_l = self.object_embedding_generator.generate_embeddings_hands(
+                                image, hand_data.left_hand.keypoints_image
+                            )
+                        elif mode == "text":
+                            emb_l = self.object_embedding_generator.generate_text_embedding("left hand")
+                        elif mode == "concat":
+                            
+                            emb_l = self.object_embedding_generator.generate_fused_embedding_hands(
+                                    image, hand_data.left_hand.keypoints_image, "left hand")    
+                        
+                        else:
+                            raise ValueError(f"Unknown hand_feat_mode {mode}")
+                        
+                        if emb_l is not None:
+                            hand_data.left_hand.add_embedding(emb_l)
+
+                        # guarantee a 3-vector position
+                        if not hasattr(hand_data.left_hand, "position"):
+                            kp3d = hand_data.left_hand.keypoints_pcd
+                            center = kp3d.mean(axis=0) if kp3d.size else np.full(3, np.nan)
+                            hand_data.left_hand.position = center.astype(np.float32)
+
+                    # ---------- RIGHT ----------
+                    if has_right:
+                        if mode == "image":
+                            emb_r = self.object_embedding_generator.generate_embeddings_hands(
+                                image, hand_data.right_hand.keypoints_image
+                            )
+                        elif mode == "text":
+                            emb_r = self.object_embedding_generator.generate_text_embedding("right hand")
+                        elif mode == "concat":
+                            emb_r = self.object_embedding_generator.generate_fused_embedding_hands(
+                                    image, hand_data.right_hand.keypoints_image, "right hand")    
+                        
+                        if emb_r is not None:
+                            hand_data.right_hand.add_embedding(emb_r)
+
+                        if not hasattr(hand_data.right_hand, "position"):
+                            kp3d = hand_data.right_hand.keypoints_pcd
+                            center = kp3d.mean(axis=0) if kp3d.size else np.full(3, np.nan)
+                            hand_data.right_hand.position = center.astype(np.float32)
+            # ---------------------------------------------------------------
+    
 
             # center of the mask in the original image
             bbox = mask['bbox']
             center = (int(bbox[0] + bbox[2] / 2), int(bbox[1] + bbox[3] / 2))
             # get the name of the object
-            # name = self.vlm.ask(image, center, radius)
-            name = "unknown"
-            # print(f"Object: {name}, Radius: {radius}, Center: {center}")
+            name = self.vlm.ask(image, center, radius)
+            #name = "unknown"
+            print(f"Object: {name}, Radius: {radius}, Center: {center}")
             # calc the centroid of the pcd_segment
 
             # remove outliers from the point cloud segment
@@ -227,6 +310,11 @@ class Segmentation:
                                                       nb_neighbors=20,
                                                       std_ratio=2.0)
             centroid = pcd_segment[:, :3].mean(axis=0)
+            # 2. Make it crash-proof for empty or degenerate point clouds
+            centroid = np.asarray(centroid, dtype=np.float32)
+            if centroid.shape != (3,) or np.isnan(centroid).any():
+                centroid = np.full(3, np.nan, dtype=np.float32)   # fallback 3-vector
+
             # fit a bounding box to the point cloud segment
             if pcd_segment.shape[0] == 0:
                 print(f"Skipping empty point cloud segment for object: {name}")
@@ -235,12 +323,21 @@ class Segmentation:
             pcd_o3d = o3d.geometry.PointCloud()
             pcd_o3d.points = o3d.utility.Vector3dVector(pcd_segment[:, :3])
 
-            embedding  = self.object_embedding_generator.generate_embedding(image, segm)
+            
+            text_feat  = self.object_embedding_generator.generate_text_embedding(name)
+            image_feat  = self.object_embedding_generator.generate_embedding(image, segm)
+            embedding  = np.concatenate([text_feat, image_feat], axis=-1)
+            embedding = self.object_embedding_generator.generate_fused_embedding(image, segm, name)
+
+            print(name, embedding.shape, np.linalg.norm(embedding))
+
         
 
             obb = pcd_o3d.get_oriented_bounding_box()
 
+
             obj = Object(name, centroid, bbox, segm, pcd=pcd_segment, obb=obb, embedding=embedding)
+            obj.position = centroid         # ← NEW: keep graph-generator happy
             self.objects.append(obj)
 
         t1 = time.time()

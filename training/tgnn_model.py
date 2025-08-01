@@ -14,26 +14,28 @@ class GraphClassifier(nn.Module):
         self.fc2 = nn.Linear(128, out_channels)
 
         # create MLP for edge features
-        self.edge_mlp = nn.Sequential(
-            nn.Linear(edge_feat_dim, 512),
-            nn.ReLU(),
-            nn.Linear(512, feat_dim)
-        )
+        self.edge_mlp = nn.Identity() #nn.Sequential(
+        # nn.Sequential(
+        #     nn.Linear(1, 512), #replace 1 with edge_feat_dim if you have edge features ablation study
+        #     nn.Dropout(0.3),
+        #     nn.ReLU(),
+        #     nn.Linear(512, feat_dim)
+        # )
 
         # create a mlp for node features
         self.node_mlp = nn.Sequential(
             nn.Linear(in_channels, 512),
             nn.ReLU(),
-            nn.Dropout(0.5),
             nn.Linear(512, 512),
+            nn.Dropout(0.3),
             nn.ReLU(),
             nn.Linear(512, feat_dim)
         )
 
 
         self.conv = HeteroConv({
-            ('object', 'relation', 'object'): GATConv(feat_dim, hidden_channels, edge_dim=feat_dim),
-            ('object', 'temporal', 'object'): TransformerConv(feat_dim, hidden_channels),
+            ('object', 'relation', 'object'): GATConv(feat_dim, hidden_channels), #, edge_dim=None),
+            ('object', 'temporal', 'object'): GATConv(feat_dim, hidden_channels, edge_dim=None) #, edge_dim=None), #TransformerConv(feat_dim, hidden_channels),
         }, aggr='sum')
 
 
@@ -48,8 +50,11 @@ class GraphClassifier(nn.Module):
             
         # apply MLP to edge features
         for key in edge_attr_dict.keys():
-            if 'relation' in key:
-                edge_attr_dict[key] = self.edge_mlp(edge_attr_dict[key])
+            #if 'relation' in key: # for ablattion study
+            #    edge_attr_dict[key] = self.edge_mlp(edge_attr_dict[key])
+
+            if edge_attr_dict[key] is not None :
+                edge_attr_dict[key] = self.edge_mlp(edge_attr_dict[key])    
 
 
         x_dict = self.conv(x_dict, edge_index_dict, edge_attr_dict)

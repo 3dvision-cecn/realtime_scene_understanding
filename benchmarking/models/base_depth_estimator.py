@@ -7,7 +7,7 @@ class BaseDepthEstimator:
     This class provides a common interface for depth estimation methods.
     """
 
-    def __init__(self, model_path, device, config_path: str = None):
+    def __init__(self, device, model_path: str | None = None , config_path: str = None):
         self.model_path = model_path
         self.config_path = config_path
         self.device = device

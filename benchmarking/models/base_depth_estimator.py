@@ -1,0 +1,23 @@
+
+import numpy as np
+
+
+class BaseDepthEstimator:
+    """ Base class for depth estimators.
+    This class provides a common interface for depth estimation methods.
+    """
+
+    def __init__(self, model_path, device, config_path: str = None):
+        self.model_path = model_path
+        self.config_path = config_path
+        self.device = device
+
+
+    def process_image(self, image: np.ndarray) -> np.ndarray:
+        """ Process the input image and return the depth map.
+        Args:
+            image (np.ndarray): Input image in RGB format.
+        Returns:
+            np.ndarray: Depth map corresponding to the input image.
+        """
+        raise NotImplementedError("This method should be overridden by subclasses.")

@@ -185,16 +185,23 @@ class R3D_loader:
 
 
 
-    def generate_pixel_indexed_pcd(self, color, depth, cam2world_hom):
+    def generate_pixel_indexed_pcd(self, color, depth, cam2world_hom, intrinsics=None):
         # create an Open3D RGBD image
-        intr = o3d.camera.PinholeCameraIntrinsic(
-            self.intrinsics_dict["w"], self.intrinsics_dict["h"],
-            self.intrinsics_dict["fx"], self.intrinsics_dict["fy"],
-            self.intrinsics_dict["cx"], self.intrinsics_dict["cy"],
-        )
+        intr = None
+        if intrinsics is None:
+            intr = o3d.camera.PinholeCameraIntrinsic(
+                self.intrinsics_dict["w"], self.intrinsics_dict["h"],
+                self.intrinsics_dict["fx"], self.intrinsics_dict["fy"],
+                self.intrinsics_dict["cx"], self.intrinsics_dict["cy"],
+            )
+        else:
+            intr = o3d.camera.PinholeCameraIntrinsic(
+                intrinsics["w"], intrinsics["h"],
+                intrinsics["fx"], intrinsics["fy"],
+                intrinsics["cx"], intrinsics["cy"],
+            )
 
         if color.shape[0] * color.shape[1] != depth.shape[0] * depth.shape[1]:
-            print(f"Warning: color shape {color.shape} does not match depth shape {depth.shape}.")
             return None
 
         rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(

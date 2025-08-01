@@ -28,6 +28,29 @@ class MLDepthEstimator(BaseDepthEstimator):
                 outputs, target_sizes=[(image.height, image.width)])
         
         depth = post_processed_output[0]["predicted_depth"]
+        field_of_view = post_processed_output[0]["field_of_view"]  # in degrees (horizontal)
+        focal_length = post_processed_output[0]["focal_length"]    # in mm or pixels depending on model output
 
-        return depth.cpu().to(torch.float32).numpy().squeeze()
+        intrinsics_dict = {}
+        intrinsics_dict["w"] = depth.shape[-1]
+        intrinsics_dict["h"] = depth.shape[-2]
+
+        # Compute focal length in pixels from FoV (assuming horizontal FoV)
+        import math
+        W = intrinsics_dict["w"]
+        H = intrinsics_dict["h"]
+
+        fx = W / (2 * math.tan(math.radians(field_of_view) / 2))
+        fy = fx  # assuming square pixels; otherwise compute from vertical FoV if available
+
+        # Principal point at image center
+        cx = (W - 1) / 2
+        cy = (H - 1) / 2
+
+        intrinsics_dict["fx"] = fx
+        intrinsics_dict["fy"] = fy
+        intrinsics_dict["cx"] = cx
+        intrinsics_dict["cy"] = cy
+
+        return depth.cpu().to(torch.float32).numpy().squeeze(), None
         

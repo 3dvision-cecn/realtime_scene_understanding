@@ -51,24 +51,21 @@ def main(config: BenchmarkingConfig):
             if image is None:
                 break
             # get the depth map using the models
-            predicted_depth = depth_estimator.process_image(image)
+            predicted_depth, pred_intr = depth_estimator.process_image(image)
 
-            print("predicted_depth shape:", predicted_depth.shape)
-            print("depth shape:", depth.shape)
-            print("image shape:", image.shape)
-
-            pixel_indexed_pcd_pred = data_source.generate_pixel_indexed_pcd(image, predicted_depth, pose)
+            pixel_indexed_pcd_pred = data_source.generate_pixel_indexed_pcd(image, predicted_depth, pose, pred_intr)
             pred_points = pixel_indexed_pcd_pred[:, :, :3]
             pred_colors = pixel_indexed_pcd_pred[:, :, 3:]
             
-            l1_loss = torch.nn.functional.l1_loss(
+            # l1 error between predicted and ground truth depth
+            l1_error = torch.nn.functional.l1_loss(
                 torch.tensor(predicted_depth, device=device, dtype=torch.float32),
                 torch.tensor(depth, device=device, dtype=torch.float32)
             )
 
-            print(f"Frame {frame}: L1 Loss = {l1_loss.item()}")
-            print(f"min(predicted_depth): {predicted_depth.min()}, max(predicted_depth): {predicted_depth.max()}")
-            print(f"min(depth): {depth.min()}, max(depth): {depth.max()}")
+
+
+            print(f"Frame {frame}: L1 Loss: {l1_error.item()}")
 
             # apply jet colormap to the depth maps for visualization
             # Normalize the predicted depth for visualization
@@ -81,25 +78,37 @@ def main(config: BenchmarkingConfig):
             depth_norm = depth_norm.astype('uint8')
             depth_color = cv2.applyColorMap(depth_norm, cv2.COLORMAP_JET)
 
-            # Log the colorized depth maps
-            rr.log("predicted_depth_colormap", rr.Image(predicted_color).compress(jpeg_quality=95))
-            rr.log("ground_truth_depth_colormap", rr.Image(depth_color).compress(jpeg_quality=95))
+            # create a l1 error image
+            l1_error_image = np.abs(predicted_depth - depth)
+            l1_error_norm = cv2.normalize(l1_error_image, None, 0, 255, cv2.NORM_MINMAX)
+            l1_error_norm = l1_error_norm.astype('uint8')
+
 
             ## Rerun logging
             rr.set_time("time", timestamp=frame)
+
+            rr.log("l1_error", rr.Image(l1_error_norm).compress(jpeg_quality=95))
+            rr.log("predicted_depth_colormap", rr.Image(predicted_color).compress(jpeg_quality=95))
+            rr.log("ground_truth_depth_colormap", rr.Image(depth_color).compress(jpeg_quality=95))
             rr.log("rgb", rr.Image(image).compress(jpeg_quality=95))
 
-            ## Log the point cloud
-            ## convert to Points3D format
             gt_points = gt_points.reshape(-1, 3)
             gt_colors = gt_colors.reshape(-1, 3)
-            red_color = np.array([255, 0, 0], dtype=np.float32) / 255.0
-            rr.log("world/point_cloud_gt", rr.Points3D(gt_points, colors=red_color))
-
             pred_points = pred_points.reshape(-1, 3)
             pred_colors = pred_colors.reshape(-1, 3)
+
+            if len(gt_points) > 30000:
+                indices = np.random.choice(len(gt_points), size=100000, replace=False)
+                gt_points = gt_points[indices]
+                gt_colors = gt_colors[indices]
+                pred_points = pred_points[indices]
+                pred_colors = pred_colors[indices]
+
+
+            red_color = np.array([255, 0, 0], dtype=np.float32) / 255.0
+            rr.log("world/point_cloud_gt", rr.Points3D(gt_points, colors=gt_colors))
             blue_color = np.array([0, 0, 255], dtype=np.float32) / 255.0
-            rr.log("world/point_cloud_pred", rr.Points3D(pred_points, colors=blue_color))
+            rr.log("world/point_cloud_pred", rr.Points3D(pred_points, colors=pred_colors))
 
 if __name__ == "__main__":
     config = tyro.cli(BenchmarkingConfig)

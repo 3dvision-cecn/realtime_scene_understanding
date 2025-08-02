@@ -11,7 +11,7 @@ import numpy as np
 
 @dataclass
 class BenchmarkingConfig:
-    red_folders: List[str] = field(default_factory=lambda: ["dataset/recordings/train/01"])
+    red_folders: List[str] = field(default_factory=lambda: ["/workspace/recordings/recordings/train/01"])
     decimation_factor: int = 1  # decimation factor for the frames, default is 1 (no decimation)
     model: str = "MLDepthEstimator"  # models to benchmark, default is MLDepthEstimator
 

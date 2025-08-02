@@ -24,7 +24,7 @@ def main(config: BenchmarkingConfig):
     print(f"Models to benchmark: {config.model}")
 
     # Initialize rerun
-    rr.init("3d_vision_benchmark", spawn=True)
+    rr.init("3d_vision_benchmark", spawn=False)
     rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
 
 
@@ -42,6 +42,7 @@ def main(config: BenchmarkingConfig):
         
         for _ in tqdm(range(num_frames)):
             image, depth, pose, frame = data_source.next_frame()
+            print(f"Depth shape: {depth.shape}")
 
             # get the point cloud from the RGBD image
             pixel_indexed_pcd_gt = data_source.generate_pixel_indexed_pcd(image, depth, pose)
@@ -52,10 +53,18 @@ def main(config: BenchmarkingConfig):
                 break
             # get the depth map using the models
             predicted_depth, pred_intr = depth_estimator.process_image(image)
+            print(f"Predicted Depth shape: {predicted_depth.shape}")
+
 
             pixel_indexed_pcd_pred = data_source.generate_pixel_indexed_pcd(image, predicted_depth, pose, pred_intr)
+            if pixel_indexed_pcd_pred is None:
+                print(f"Warning: Skipping frame {frame} due to point cloud generation failure")
+                continue
             pred_points = pixel_indexed_pcd_pred[:, :, :3]
             pred_colors = pixel_indexed_pcd_pred[:, :, 3:]
+            
+            # Filter out NaN values for point cloud visualization
+            valid_pred_mask = np.isfinite(pred_points).all(axis=2)
             
             # l1 error between predicted and ground truth depth
             l1_error = torch.nn.functional.l1_loss(
@@ -94,21 +103,29 @@ def main(config: BenchmarkingConfig):
 
             gt_points = gt_points.reshape(-1, 3)
             gt_colors = gt_colors.reshape(-1, 3)
-            pred_points = pred_points.reshape(-1, 3)
-            pred_colors = pred_colors.reshape(-1, 3)
+            
+            # Filter out NaN values from predicted points
+            pred_points_flat = pred_points.reshape(-1, 3)
+            pred_colors_flat = pred_colors.reshape(-1, 3)
+            valid_pred_indices = np.isfinite(pred_points_flat).all(axis=1)
+            pred_points_valid = pred_points_flat[valid_pred_indices]
+            pred_colors_valid = pred_colors_flat[valid_pred_indices]
 
             if len(gt_points) > 30000:
-                indices = np.random.choice(len(gt_points), size=100000, replace=False)
-                gt_points = gt_points[indices]
-                gt_colors = gt_colors[indices]
-                pred_points = pred_points[indices]
-                pred_colors = pred_colors[indices]
+                # Sample from ground truth
+                gt_indices = np.random.choice(len(gt_points), size=min(100000, len(gt_points)), replace=False)
+                gt_points = gt_points[gt_indices]
+                gt_colors = gt_colors[gt_indices]
+                
+                # Sample from valid predicted points
+                if len(pred_points_valid) > 30000:
+                    pred_indices = np.random.choice(len(pred_points_valid), size=min(100000, len(pred_points_valid)), replace=False)
+                    pred_points_valid = pred_points_valid[pred_indices]
+                    pred_colors_valid = pred_colors_valid[pred_indices]
 
-
-            red_color = np.array([255, 0, 0], dtype=np.float32) / 255.0
+            print(f"Logging {len(gt_points)} GT points and {len(pred_points_valid)} predicted points")
             rr.log("world/point_cloud_gt", rr.Points3D(gt_points, colors=gt_colors))
-            blue_color = np.array([0, 0, 255], dtype=np.float32) / 255.0
-            rr.log("world/point_cloud_pred", rr.Points3D(pred_points, colors=pred_colors))
+            rr.log("world/point_cloud_pred", rr.Points3D(pred_points_valid, colors=pred_colors_valid))
 
 if __name__ == "__main__":
     config = tyro.cli(BenchmarkingConfig)

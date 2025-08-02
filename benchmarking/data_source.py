@@ -203,6 +203,14 @@ class R3D_loader:
 
         if color.shape[0] * color.shape[1] != depth.shape[0] * depth.shape[1]:
             return None
+        print(f"Depth 02: {depth.shape}")
+
+        # Ensure depth is float and has no invalid values
+        depth = np.nan_to_num(depth, nan=0.0)
+        depth[depth <= 0] = 0.001  # Set very small positive values instead of zero
+        
+        # Set a very large depth_trunc to avoid clipping
+        depth_trunc = 1e6  # 1,000,000 mm = 1,000 meters
 
         rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
             o3d.geometry.Image(color),
@@ -214,6 +222,7 @@ class R3D_loader:
 
         # backproject to a point cloud and transform into world coords
         pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, intr)
+        print(f"PCD: ")
         flip_transform = [[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]]
         pcd.transform(flip_transform)
 

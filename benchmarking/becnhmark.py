@@ -13,8 +13,8 @@ import numpy as np
 class BenchmarkingConfig:
     red_folders: List[str] = field(default_factory=lambda: ["/workspace/recordings/recordings/train/01"])
     decimation_factor: int = 1  # decimation factor for the frames, default is 1 (no decimation)
-    model: str = "MLDepthEstimator"  # models to benchmark, default is MLDepthEstimator
-
+    model: str = "MarigoldDepthEstimator"  # models to benchmark, default is MLDepthEstimator
+    spawn_rerun: bool = True  # whether to spawn rerun or not
 
 
 def main(config: BenchmarkingConfig):
@@ -24,7 +24,7 @@ def main(config: BenchmarkingConfig):
     print(f"Models to benchmark: {config.model}")
 
     # Initialize rerun
-    rr.init("3d_vision_benchmark", spawn=False)
+    rr.init("3d_vision_benchmark", spawn=config.spawn_rerun)
     rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
 
 
@@ -71,10 +71,11 @@ def main(config: BenchmarkingConfig):
                 torch.tensor(predicted_depth, device=device, dtype=torch.float32),
                 torch.tensor(depth, device=device, dtype=torch.float32)
             )
+            # abs relative error
+            abs_rel_error = torch.mean(torch.abs(predicted_depth - depth) / (depth + 1e-6))
 
 
-
-            print(f"Frame {frame}: L1 Loss: {l1_error.item()}")
+            print(f"Frame {frame}: L1 error: {l1_error.item()}, Absolute Relative Error: {abs_rel_error.item()}")
 
             # apply jet colormap to the depth maps for visualization
             # Normalize the predicted depth for visualization

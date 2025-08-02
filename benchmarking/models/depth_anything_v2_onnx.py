@@ -100,10 +100,9 @@ class DepthAnythingONNXEstimator(BaseDepthEstimator):
             Processed depth map
         """
         # Remove batch dimension and squeeze
-        depth = depth_output[0, 0]  # (1, 1, H, W) -> (H, W)
         
         # Resize to target shape
-        depth_resized = cv2.resize(depth, (target_shape[1], target_shape[0]), interpolation=cv2.INTER_LINEAR)
+        depth_resized = cv2.resize(depth_output, (target_shape[1], target_shape[0]), interpolation=cv2.INTER_LINEAR)
         
         return depth_resized
 
@@ -159,9 +158,10 @@ class DepthAnythingONNXEstimator(BaseDepthEstimator):
         
         # Run inference
         depth_output = self.session.run(None, {"image": preprocessed_image})[0]
-        
+        depth_output_squeezed = depth_output.squeeze(axis=0)  # Remove batch dimension
+
         # Postprocess depth
-        depth_map = self._postprocess_depth(depth_output, orig_shape)
+        depth_map = self._postprocess_depth(depth_output_squeezed, orig_shape)
         
         # Compute intrinsics
         intrinsics = self._compute_intrinsics(orig_shape)
@@ -173,5 +173,5 @@ class DepthAnythingONNXEstimatorLarge(DepthAnythingONNXEstimator):
     
     def __init__(self, device="cuda", model_path=None, config_path=None):
         if model_path is None:
-            model_path = "/workspace/realtime_scene_understanding/benchmarking/models/depth_anything_v2/depth_anything_v2_vitl_indoor_dynamic.onnx"
+            model_path = "conf/checkpoints/depthanythingv2/depth_anything_v2_vitl_indoor_dynamic.onnx"
         super().__init__(device=device, model_path=model_path, config_path=config_path)

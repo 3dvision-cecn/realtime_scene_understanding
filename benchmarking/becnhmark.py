@@ -11,9 +11,9 @@ import numpy as np
 
 @dataclass
 class BenchmarkingConfig:
-    red_folders: List[str] = field(default_factory=lambda: ["/workspace/recordings/recordings/train/01"])
+    red_folders: List[str] = field(default_factory=lambda: ["dataset/recordings/train/01"])
     decimation_factor: int = 1  # decimation factor for the frames, default is 1 (no decimation)
-    model: str = "MarigoldDepthEstimator"  # models to benchmark, default is MLDepthEstimator
+    model: str = "DepthAnythingONNXEstimatorLarge"  # models to benchmark, default is MLDepthEstimator
     spawn_rerun: bool = True  # whether to spawn rerun or not
 
 
@@ -72,7 +72,7 @@ def main(config: BenchmarkingConfig):
                 torch.tensor(depth, device=device, dtype=torch.float32)
             )
             # abs relative error
-            abs_rel_error = torch.mean(torch.abs(predicted_depth - depth) / (depth + 1e-6))
+            abs_rel_error = np.mean(np.abs(predicted_depth - depth) / (depth + 1e-6))
 
 
             print(f"Frame {frame}: L1 error: {l1_error.item()}, Absolute Relative Error: {abs_rel_error.item()}")

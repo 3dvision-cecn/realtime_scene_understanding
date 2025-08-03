@@ -10,3 +10,5 @@ from .metric3d_estimator import (
     Metric3DONNXEstimatorLarge,
     Metric3DONNXEstimatorGiant,
 )
+
+from .video_depth_anything import VideoDepthAnything

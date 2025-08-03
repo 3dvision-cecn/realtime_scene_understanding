@@ -13,7 +13,7 @@ import numpy as np
 class BenchmarkingConfig:
     red_folders: List[str] = field(default_factory=lambda: ["dataset/recordings/train/01"])
     decimation_factor: int = 1  # decimation factor for the frames, default is 1 (no decimation)
-    model: str = "DepthAnythingONNXEstimatorLarge"  # models to benchmark, default is MLDepthEstimator
+    model: str = "Metric3DONNXEstimatorLarge"  # models to benchmark, default is MLDepthEstimator
     spawn_rerun: bool = True  # whether to spawn rerun or not
 
 

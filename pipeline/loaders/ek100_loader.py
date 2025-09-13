@@ -4,6 +4,8 @@ import numpy as np
 import os
 from typing import Optional, Tuple, List, Dict
 from dataclasses import dataclass
+import open3d as o3d
+from ..stages.ml_depth_pro import MLDepthEstimator
 
 
 @dataclass
@@ -37,6 +39,10 @@ class EK100Loader:
         self.frames_per_hypergraph = cfg.frames_per_hypergraph
         self.sliding_window_reduction = cfg.sliding_window_reduction
         self.frame_sampling_interval = getattr(cfg, 'frame_sampling_interval', 1)
+        
+        # Initialize depth estimator
+        self.depth_estimator = MLDepthEstimator(device=device)
+        print("Initialized ML Depth Pro estimator for EK-100")
         
         # Load narration data
         self.narration_df = pd.read_csv(self.narration_csv_path)
@@ -195,6 +201,147 @@ class EK100Loader:
             frames.append(frame)
         
         return frames
+    
+    def next_frame(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], Optional[float]]:
+        """
+        Get the next frame with depth estimation for pipeline compatibility.
+        Returns (frame_rgb, depth, pose, timestamp) where pose is None for EK-100.
+        """
+        if (self.current_narration is None or 
+            self.current_video_cap is None or 
+            self.current_frame_idx >= len(self.current_narration_frames)):
+            return None, None, None, None
+        
+        # Get the current frame
+        start_frame = self.current_narration_frames[self.current_frame_idx]
+        
+        # Seek to frame
+        self.current_video_cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        ret, frame = self.current_video_cap.read()
+        if not ret:
+            return None, None, None, None
+        
+        # Convert BGR to RGB
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Generate depth using ML Depth Pro
+        depth, intrinsics = self.depth_estimator.process_image(frame_rgb)
+        
+        # Store intrinsics for point cloud generation
+        if intrinsics is not None:
+            self.intrinsics_dict = intrinsics
+        else:
+            # Use default camera intrinsics if not provided by the model
+            h, w = frame_rgb.shape[:2]
+            self.intrinsics_dict = {
+                "w": w,
+                "h": h,
+                "fx": w * 0.6,  # Default focal length estimation
+                "fy": w * 0.6,
+                "cx": w / 2.0,
+                "cy": h / 2.0
+            }
+        
+        # Calculate timestamp (frame index / 30 fps assumed)
+        timestamp = start_frame / 30.0
+        
+        # No pose information for EK-100, use identity matrix
+        pose = np.eye(4, dtype=np.float32)
+        
+        self.current_frame_idx += 1
+        
+        return frame_rgb, depth, pose, timestamp
+    
+    def get_intrinsics(self) -> Dict:
+        """Get camera intrinsics dictionary"""
+        if hasattr(self, 'intrinsics_dict'):
+            return self.intrinsics_dict
+        else:
+            # Return default intrinsics
+            return {
+                "w": 1920,
+                "h": 1080,
+                "fx": 1152,
+                "fy": 1152,
+                "cx": 960,
+                "cy": 540
+            }
+    
+    def generate_pixel_indexed_pcd(self, color: np.ndarray, depth: np.ndarray, cam2world: np.ndarray) -> Optional[np.ndarray]:
+        """
+        Generate a pixel-indexed point cloud from color and depth images.
+        Returns array of shape (H, W, 6) with [x, y, z, r, g, b] for each pixel.
+        """
+        if color.shape[:2] != depth.shape[:2]:
+            print(f"Warning: color shape {color.shape} does not match depth shape {depth.shape}.")
+            return None
+        
+        h, w = depth.shape
+        intrinsics = self.get_intrinsics()
+        
+        # Create coordinate grids
+        u = np.arange(w)
+        v = np.arange(h)
+        uu, vv = np.meshgrid(u, v)
+        
+        # Unproject to 3D camera coordinates
+        fx, fy = intrinsics["fx"], intrinsics["fy"]
+        cx, cy = intrinsics["cx"], intrinsics["cy"]
+        
+        X = (uu - cx) * depth / fx
+        Y = (vv - cy) * depth / fy
+        Z = depth
+        points_cam = np.stack((X, Y, Z), axis=-1)  # (H,W,3)
+        
+        # Convert to homogeneous coordinates
+        ones = np.ones((h, w, 1), dtype=points_cam.dtype)
+        points_cam_hom = np.concatenate([points_cam, ones], axis=-1)  # (H,W,4)
+        
+        # Reshape and transform points to world coordinates
+        points_flat = points_cam_hom.reshape(-1, 4).T  # (4, H*W)
+        points_world_flat = (cam2world @ points_flat).T  # (H*W,4)
+        points_world = points_world_flat[:, :3].reshape(h, w, 3)
+        
+        # Combine world coordinates with color to form a pixel-indexed point cloud (H, W, 6)
+        pixel_indexed_pcd = np.concatenate([points_world, color.astype(np.float32)], axis=-1)
+        
+        return pixel_indexed_pcd
+    
+    def generate_pcd(self, color: np.ndarray, depth: np.ndarray, cam2world: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Generate a traditional point cloud from color and depth images.
+        Returns (points, colors) arrays.
+        """
+        intrinsics = self.get_intrinsics()
+        
+        # Create an Open3D RGBD image
+        intr = o3d.camera.PinholeCameraIntrinsic(
+            intrinsics["w"], intrinsics["h"],
+            intrinsics["fx"], intrinsics["fy"],
+            intrinsics["cx"], intrinsics["cy"],
+        )
+        
+        rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
+            o3d.geometry.Image(color),
+            o3d.geometry.Image(depth * 1000),  # convert depth to mm
+            convert_rgb_to_intensity=False,
+        )
+        
+        # Backproject to a point cloud and transform into world coords
+        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, intr)
+        
+        # Apply flip transform (standard computer vision convention)
+        flip_transform = [[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]]
+        pcd.transform(flip_transform)
+        
+        # Transform the point cloud into world coordinates
+        pcd.transform(cam2world)
+        
+        # Extract numpy arrays
+        pts = np.asarray(pcd.points)
+        cols = np.asarray(pcd.colors)
+        
+        return pts, cols
     
     def get_current_narration_info(self) -> Optional[Dict]:
         """Get information about the current narration"""

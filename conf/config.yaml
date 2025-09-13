@@ -54,3 +54,5 @@ ek100_loader:
   frames_per_hypergraph: 16
   sliding_window_reduction: 8
   frame_sampling_interval: 1
+  use_depth_estimation: true
+  depth_model: "ml_depth_pro"

@@ -294,14 +294,21 @@ def process_ek100_narration(cfg, narration_id: str, device: str = "cuda"):
         # Process each frame in the window
         for frame_idx, frame in enumerate(window_frames):
             try:
+                # Generate depth estimation for this frame
+                depth, intrinsics = video_loader.depth_estimator.process_image(frame)
+                
+                # Generate pixel indexed point cloud
+                pose = np.eye(4, dtype=np.float32)  # Identity pose for EK-100
+                pixel_indexed_pcd = video_loader.generate_pixel_indexed_pcd(frame, depth, pose)
+                
                 # Hand detection
                 hand_data, hd_img = hand_detection.detect_hands(
-                    frame, None, timestamp_ms=int((start_frame + frame_idx) * 33)  # Assuming ~30fps
+                    frame, pixel_indexed_pcd, timestamp_ms=int((start_frame + frame_idx) * 33)  # Assuming ~30fps
                 )
                 
                 # Segmentation
                 objects, seg_img, hand_data = segmentation.segment(
-                    frame, None, hand_data, timestamp_ms=int((start_frame + frame_idx) * 33), 
+                    frame, pixel_indexed_pcd, hand_data, timestamp_ms=int((start_frame + frame_idx) * 33), 
                     iteration=start_frame + frame_idx
                 )
                 

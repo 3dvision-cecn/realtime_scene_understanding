@@ -19,6 +19,8 @@ from pipeline.stages.segmentation import Segmentation
 from pipeline.stages.graph_generator import GraphGenerator
 from pipeline.loaders.red_loader import R3D_loader
 from pipeline.stages.training_generator import TrainingGenerator
+from pipeline.loaders.ek100_loader import EK100Loader
+from pipeline.stages.ek100_training_generator import EK100TrainingGenerator
 
 
 from scipy.spatial.transform import Rotation
@@ -50,6 +52,10 @@ def main(cfg, start_rerun: bool = False, device = "cuda"):
     elif cfg.dataset == "hd_epic":
         video_loader = VRSLoader(cfg.vrs_loader, device=device)
         rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP)
+    
+    elif cfg.dataset == "ek100":
+        video_loader = EK100Loader(cfg.ek100_loader, device=device)
+        rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
 
     # hand detection
     hand_detection = HandDetection(cfg.hand_detection_hamer, device=device)
@@ -62,9 +68,12 @@ def main(cfg, start_rerun: bool = False, device = "cuda"):
     graph_generator = GraphGenerator(cfg.graph_generator, device=device)
 
     # training generator
-    training_generator = TrainingGenerator(cfg, device=device)
-    if cfg.dataset == "hd_epic":
-        training_generator.set_sample_dir(video_loader.get_folder_suffix())
+    if cfg.dataset == "ek100":
+        training_generator = EK100TrainingGenerator(cfg, device=device)
+    else:
+        training_generator = TrainingGenerator(cfg, device=device)
+        if cfg.dataset == "hd_epic":
+            training_generator.set_sample_dir(video_loader.get_folder_suffix())
 
     # ---- Reduce to ~10 FPS ----
     last_process_ts = -float('inf')
@@ -238,6 +247,88 @@ def main(cfg, start_rerun: bool = False, device = "cuda"):
     for key, times in time_analysis.items():
         print(f"Average time for {key}: {np.mean(times):.3f} seconds over {len(times)} frames")
 
+
+def process_ek100_narration(cfg, narration_id: str, device: str = "cuda"):
+    """
+    Process a specific EK-100 narration with sliding window hypergraph generation.
+    """
+    print(f"Processing EK-100 narration: {narration_id}")
+    
+    # Initialize components
+    video_loader = EK100Loader(cfg.ek100_loader, device=device)
+    hand_detection = HandDetection(cfg.hand_detection_hamer, device=device)
+    segmentation = Segmentation(cfg.segmentation, device=device)
+    graph_generator = GraphGenerator(cfg.graph_generator, device=device)
+    training_generator = EK100TrainingGenerator(cfg, device=device)
+    
+    # Setup narration
+    if not video_loader.setup_narration(narration_id):
+        print(f"Failed to setup narration: {narration_id}")
+        return False
+    
+    narration_info = video_loader.get_current_narration_info()
+    training_generator.setup_narration(narration_id, narration_info)
+    
+    window_count = 0
+    
+    # Process each frame window
+    while True:
+        window_result = video_loader.next_frame_window()
+        if window_result is None:
+            break
+        
+        first_frame, start_frame, end_frame = window_result
+        window_count += 1
+        
+        print(f"Processing window {window_count}: frames {start_frame}-{end_frame}")
+        
+        # Start new window in training generator
+        training_generator.start_window(start_frame, end_frame)
+        
+        # Get all frames for this window
+        window_frames = video_loader.get_window_frames(start_frame, cfg.ek100_loader.frames_per_hypergraph)
+        
+        if len(window_frames) < cfg.ek100_loader.frames_per_hypergraph:
+            print(f"Warning: Only got {len(window_frames)} frames, expected {cfg.ek100_loader.frames_per_hypergraph}")
+        
+        # Process each frame in the window
+        for frame_idx, frame in enumerate(window_frames):
+            try:
+                # Hand detection
+                hand_data, hd_img = hand_detection.detect_hands(
+                    frame, None, timestamp_ms=int((start_frame + frame_idx) * 33)  # Assuming ~30fps
+                )
+                
+                # Segmentation
+                objects, seg_img, hand_data = segmentation.segment(
+                    frame, None, hand_data, timestamp_ms=int((start_frame + frame_idx) * 33), 
+                    iteration=start_frame + frame_idx
+                )
+                
+                # Graph generation
+                graph = graph_generator.generate_graph(frame, objects, hand_data)
+                
+                # Add to training generator
+                training_generator.add_frame_to_window(frame, graph)
+                
+            except Exception as e:
+                print(f"Error processing frame {frame_idx} in window: {e}")
+                # Create empty graph for failed frames
+                from torch_geometric.data import HeteroData
+                empty_graph = HeteroData()
+                training_generator.add_frame_to_window(frame, empty_graph)
+        
+        # Finalize the window
+        if not training_generator.finalize_window():
+            print(f"Failed to finalize window {window_count}")
+    
+    # Cleanup
+    training_generator.cleanup_narration()
+    video_loader.cleanup()
+    
+    print(f"✓ Processed {window_count} windows for narration {narration_id}")
+    return True
+
 import argparse
 
 
@@ -271,13 +362,19 @@ if __name__ == "__main__":
         "--dataset",
         type=str,
         default="red",
-        help="Path to the configuration file.",
+        help="Dataset to process: red, hd_epic, or ek100",
     )
     parser.add_argument(
         "--full",
         action="store_true",
         default=False,
         help="Run the full pipeline on all of the recorded videos.",
+    )
+    parser.add_argument(
+        "--narration_id",
+        type=str,
+        default=None,
+        help="Specific narration ID to process (for EK-100 dataset)",
     )
 
     args = parser.parse_args()
@@ -389,5 +486,64 @@ if __name__ == "__main__":
                 cfg = compose(config_name="config")
                 cfg.dataset = "hd_epic"
                 main(cfg, start_rerun=True)
+
+    elif args.dataset == "ek100":
+        print("+++++++++++++++++++ USING EK-100")
+        
+        with initialize(config_path="conf", version_base=None):
+            cfg = compose(config_name="config")
+            cfg.dataset = "ek100"
+            
+            if args.narration_id:
+                # Process specific narration
+                print(f"Processing specific narration: {args.narration_id}")
+                success = process_ek100_narration(cfg, args.narration_id)
+                if success:
+                    print(f"✓ Successfully processed narration {args.narration_id}")
+                else:
+                    print(f"✗ Failed to process narration {args.narration_id}")
+            
+            elif args.full:
+                # Process all narrations
+                print("Processing all EK-100 narrations...")
+                video_loader = EK100Loader(cfg.ek100_loader, device="cuda")
+                all_narrations = video_loader.get_all_narration_ids()
+                
+                print(f"Found {len(all_narrations)} narrations to process")
+                
+                success_count = 0
+                for i, narration_id in enumerate(all_narrations):
+                    print(f"\n[{i+1}/{len(all_narrations)}] Processing {narration_id}")
+                    try:
+                        if process_ek100_narration(cfg, narration_id):
+                            success_count += 1
+                        
+                        # Clean up GPU memory
+                        torch.cuda.empty_cache()
+                        gc.collect()
+                        
+                    except Exception as e:
+                        print(f"Error processing {narration_id}: {e}")
+                
+                print(f"\n✓ Processed {success_count}/{len(all_narrations)} narrations successfully")
+                
+            else:
+                # Interactive mode - process first narration as example
+                print("Running EK-100 interactive mode with first narration...")
+                rr.init("ek100_stream", spawn=True)
+                rr.serve_web_viewer(open_browser=False)
+                
+                video_loader = EK100Loader(cfg.ek100_loader, device="cuda")
+                all_narrations = video_loader.get_all_narration_ids()
+                
+                if all_narrations:
+                    first_narration = all_narrations[0]
+                    print(f"Processing first narration: {first_narration}")
+                    process_ek100_narration(cfg, first_narration)
+                else:
+                    print("No narrations found in dataset")
+            
+            if 'video_loader' in locals():
+                video_loader.cleanup()
 
 

@@ -47,3 +47,10 @@ training_generator:
     pretrain_path: avion_pretrain_lavila_vitb_best.pt
     fine_tune_path: avion_finetune_cls_lavila_vitb_best.pt
   path: temp
+
+ek100_loader:
+  narration_csv_path: conf/ek100/EPIC100_train_small.csv
+  video_base_path: dataset/EPIC-KITCHENS-100/videos
+  frames_per_hypergraph: 16
+  sliding_window_reduction: 8
+  frame_sampling_interval: 1

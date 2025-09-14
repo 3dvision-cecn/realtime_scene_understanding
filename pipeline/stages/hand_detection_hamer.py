@@ -12,7 +12,7 @@ from hamer.datasets.vitdet_dataset import ViTDetDataset, DEFAULT_MEAN, DEFAULT_S
 from hamer.utils.renderer import Renderer, cam_crop_to_full
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
-from vitpose_model import ViTPoseModel
+from .vitpose_model import ViTPoseModel
 from detectron2.config import LazyConfig
 from hamer.utils.utils_detectron2 import DefaultPredictor_Lazy
 LIGHT_BLUE=(0.65098039,  0.74117647,  0.85882353)

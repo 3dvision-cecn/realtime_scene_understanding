@@ -13,7 +13,7 @@ from omegaconf import OmegaConf
 from hydra import compose, initialize
 
 
-from pipeline.loaders.vrs_loader import VRSLoader
+# from pipeline.loaders.vrs_loader import VRSLoader
 from pipeline.stages.hand_detection_hamer import HandDetection
 from pipeline.stages.segmentation import Segmentation
 from pipeline.stages.graph_generator import GraphGenerator

@@ -585,7 +585,6 @@ if __name__ == "__main__":
     class Config:
         path: str = "/path/to/vrs/data"
         vrs_slam_mapping_json: str = "vrs_slam_mapping.json"
-        ml_depth_pro_checkpoint_uri: str = "conf/checkpoints/depthpro/depth_pro.pt"
 
 
     cfg = Config(path="dataset/HD-EPIC/VRS/P01/P01-20240203-184045_anonymized.vrs", vrs_slam_mapping_json="dataset/HD-EPIC/SLAM-and-Gaze/")

@@ -4,7 +4,6 @@ video:
   path: dataset/recordings/train/07
 
 vrs_loader:
-  ml_depth_pro_checkpoint_uri: conf/checkpoints/depthpro/depth_pro.pt
   vrs_slam_mapping_json: dataset/HD-EPIC/SLAM-and-Gaze/
   path: dataset/HD-EPIC/VRS/P01/P01-20240203-184045_anonymized.vrs
 
@@ -56,3 +55,4 @@ ek100_loader:
   frame_sampling_interval: 1
   use_depth_estimation: true
   depth_model: "ml_depth_pro"
+  depth_model_path: "/shared_storage/mldepthpro_checkpoints"

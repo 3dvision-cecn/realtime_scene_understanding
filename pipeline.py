@@ -17,8 +17,6 @@ from hydra import compose, initialize
 from pipeline.stages.hand_detection_hamer import HandDetection
 from pipeline.stages.segmentation import Segmentation
 from pipeline.stages.graph_generator import GraphGenerator
-from pipeline.loaders.red_loader import R3D_loader
-from pipeline.stages.training_generator import TrainingGenerator
 from pipeline.loaders.ek100_loader import EK100Loader
 from pipeline.stages.ek100_training_generator import EK100TrainingGenerator
 
@@ -44,18 +42,13 @@ def main(cfg, start_rerun: bool = False, device = "cuda"):
     #ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     #rec_path = os.path.join("/workspace", f"video_stream_{ts}.rrd")
     #rr.save(rec_path)                     # write to disk while logging 🡅
-
-    if cfg.dataset == "red":
-        video_loader = R3D_loader(cfg.video, device)
-        rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
-
-    elif cfg.dataset == "hd_epic":
-        video_loader = VRSLoader(cfg.vrs_loader, device=device)
-        rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP)
     
-    elif cfg.dataset == "ek100":
+    if cfg.dataset == "ek100":
         video_loader = EK100Loader(cfg.ek100_loader, device=device)
         rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
+    else:
+        print("No video loader for this dataset")
+        return
 
     # hand detection
     hand_detection = HandDetection(cfg.hand_detection_hamer, device=device)
@@ -71,9 +64,8 @@ def main(cfg, start_rerun: bool = False, device = "cuda"):
     if cfg.dataset == "ek100":
         training_generator = EK100TrainingGenerator(cfg, device=device)
     else:
-        training_generator = TrainingGenerator(cfg, device=device)
-        if cfg.dataset == "hd_epic":
-            training_generator.set_sample_dir(video_loader.get_folder_suffix())
+        print("No training generator for this dataset")
+        return
 
     # ---- Reduce to ~10 FPS ----
     last_process_ts = -float('inf')
@@ -368,7 +360,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset",
         type=str,
-        default="red",
+        default="ek100",
         help="Dataset to process: red, hd_epic, or ek100",
     )
     parser.add_argument(

@@ -40,9 +40,16 @@ class EK100Loader:
         self.sliding_window_reduction = cfg.sliding_window_reduction
         self.frame_sampling_interval = getattr(cfg, 'frame_sampling_interval', 1)
         
-        # Initialize depth estimator
-        self.depth_estimator = MLDepthEstimator(device=device)
-        print("Initialized ML Depth Pro estimator for EK-100")
+        # Initialize depth estimator if enabled
+        self.use_depth_estimation = getattr(cfg, 'use_depth_estimation', True)
+        if self.use_depth_estimation:
+            # Get model path from config if available
+            depth_model_path = getattr(cfg, 'depth_model_path', None)
+            self.depth_estimator = MLDepthEstimator(device=device, model_path=depth_model_path)
+            print("Initialized ML Depth Pro estimator for EK-100")
+        else:
+            self.depth_estimator = None
+            print("Depth estimation disabled")
         
         # Load narration data
         self.narration_df = pd.read_csv(self.narration_csv_path)
@@ -224,8 +231,12 @@ class EK100Loader:
         # Convert BGR to RGB
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
-        # Generate depth using ML Depth Pro
-        depth, intrinsics = self.depth_estimator.process_image(frame_rgb)
+        # Generate depth if enabled, otherwise use None
+        if self.use_depth_estimation and self.depth_estimator is not None:
+            depth, intrinsics = self.depth_estimator.process_image(frame_rgb)
+        else:
+            depth = None
+            intrinsics = None
         
         # Store intrinsics for point cloud generation
         if intrinsics is not None:
@@ -364,7 +375,7 @@ class EK100Loader:
     
     def cleanup(self):
         """Release video capture resources"""
-        if self.current_video_cap is not None:
+        if hasattr(self, 'current_video_cap') and self.current_video_cap is not None:
             self.current_video_cap.release()
             self.current_video_cap = None
     

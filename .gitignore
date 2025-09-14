@@ -10,3 +10,5 @@ graph_samples
 temp/
 wandb/
 plots/
+docker/singularity.sif
+docker/singularity.sif.tar

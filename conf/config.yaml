@@ -8,14 +8,15 @@ vrs_loader:
   path: dataset/HD-EPIC/VRS/P01/P01-20240203-184045_anonymized.vrs
 
 hand_detection_mediapipe:
-  model_path: conf/checkpoints/mediapipe/hand_landmarker.task
+  model_path: shared_storage/checkpoints/checkpoints/mediapipe/hand_landmarker.task
 
 hand_detection_yolo:
-  model_path: conf/checkpoints/yolo/best.pt
+  model_path: shared_storage/checkpoints/checkpoints/yolo/best.pt
 
 hand_detection_hamer:
-  checkpoint: conf/checkpoints/hamer_ckpts/checkpoints/hamer.ckpt
+  checkpoint: shared_storage/checkpoints/checkpoints/hamer_ckpts/checkpoints/hamer.ckpt
   body_detector: "vitdet"
+  vitdet_checkpoint: shared_storage/checkpoints/checkpoints/hamer_ckpts/vitpose_ckpts/vitpose+_huge/wholebody.pth
 
 segmentation:
   model_cfg: checkpoints/edgetam/edgetam.yaml
@@ -55,4 +56,4 @@ ek100_loader:
   frame_sampling_interval: 1
   use_depth_estimation: true
   depth_model: "ml_depth_pro"
-  depth_model_path: "/shared_storage/mldepthpro_checkpoints"
+  depth_model_path: "/shared_storage/checkpoints/checkpoints/depthpro"

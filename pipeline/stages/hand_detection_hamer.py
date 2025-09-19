@@ -133,7 +133,37 @@ class HandDetection:
         if cfg.body_detector == 'vitdet':
             cfg_path = "third_party/hamer/hamer/configs/cascade_mask_rcnn_vitdet_h_75ep.py"
             detectron2_cfg = LazyConfig.load(str(cfg_path))
-            detectron2_cfg.train.init_checkpoint = "https://dl.fbaipublicfiles.com/detectron2/ViTDet/COCO/cascade_mask_rcnn_vitdet_h/f328730692/model_final_f05665.pkl"
+
+            # Use local checkpoint if specified, otherwise download from internet
+            if hasattr(cfg, 'vitdet_checkpoint') and cfg.vitdet_checkpoint:
+                print(f"Using local VitDet checkpoint: {cfg.vitdet_checkpoint}")
+                # Create symlink similar to ML Depth Pro approach
+                import os
+                import shutil
+
+                expected_checkpoint_dir = "./checkpoints"
+                expected_checkpoint_path = os.path.join(expected_checkpoint_dir, "vitdet_model_final_f05665.pkl")
+
+                # Create checkpoints directory if it doesn't exist
+                os.makedirs(expected_checkpoint_dir, exist_ok=True)
+
+                # Create symlink or copy if the expected path doesn't exist or points elsewhere
+                if not os.path.exists(expected_checkpoint_path) or not os.path.samefile(cfg.vitdet_checkpoint, expected_checkpoint_path):
+                    if os.path.exists(expected_checkpoint_path):
+                        os.remove(expected_checkpoint_path)
+                    try:
+                        os.symlink(os.path.abspath(cfg.vitdet_checkpoint), expected_checkpoint_path)
+                        print(f"Created symlink: {expected_checkpoint_path} -> {cfg.vitdet_checkpoint}")
+                    except OSError:
+                        # Fallback to copying if symlink fails
+                        shutil.copy2(cfg.vitdet_checkpoint, expected_checkpoint_path)
+                        print(f"Copied checkpoint: {cfg.vitdet_checkpoint} -> {expected_checkpoint_path}")
+
+                detectron2_cfg.train.init_checkpoint = expected_checkpoint_path
+            else:
+                print("No local VitDet checkpoint specified, will attempt download from internet")
+                detectron2_cfg.train.init_checkpoint = "https://dl.fbaipublicfiles.com/detectron2/ViTDet/COCO/cascade_mask_rcnn_vitdet_h/f328730692/model_final_f05665.pkl"
+
             for i in range(3):
                 detectron2_cfg.model.roi_heads.box_predictors[i].test_score_thresh = 0.25
             self.detector = DefaultPredictor_LazyN3o(detectron2_cfg, self.device)

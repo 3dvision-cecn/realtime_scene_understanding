@@ -36,21 +36,34 @@ class MLDepthEstimator(BaseDepthEstimator):
                 try:
                     if DEPTH_PRO_AVAILABLE:
                         # Use the original Apple depth_pro implementation
-                        # First load the checkpoint to get the config if available
-                        checkpoint = torch.load(checkpoint_path, map_location=device)
-                        
+                        # The depth_pro library expects checkpoints at ./checkpoints/depth_pro.pt
+                        # So we need to create a symlink or copy the file there
+                        import shutil
+                        expected_checkpoint_dir = "./checkpoints"
+                        expected_checkpoint_path = os.path.join(expected_checkpoint_dir, "depth_pro.pt")
+
+                        # Create checkpoints directory if it doesn't exist
+                        os.makedirs(expected_checkpoint_dir, exist_ok=True)
+
+                        # Create symlink or copy if the expected path doesn't exist or points elsewhere
+                        if not os.path.exists(expected_checkpoint_path) or not os.path.samefile(checkpoint_path, expected_checkpoint_path):
+                            if os.path.exists(expected_checkpoint_path):
+                                os.remove(expected_checkpoint_path)
+                            try:
+                                os.symlink(os.path.abspath(checkpoint_path), expected_checkpoint_path)
+                                print(f"Created symlink: {expected_checkpoint_path} -> {checkpoint_path}")
+                            except OSError:
+                                # Fallback to copying if symlink fails
+                                shutil.copy2(checkpoint_path, expected_checkpoint_path)
+                                print(f"Copied checkpoint: {checkpoint_path} -> {expected_checkpoint_path}")
+
                         # Create model and transforms with default config
                         self.model, self.transform = depth_pro.create_model_and_transforms(
                             config=DEFAULT_MONODEPTH_CONFIG_DICT,
                             device=device,
                             precision=torch.bfloat16,
                         )
-                        
-                        # Load the state dict
-                        if 'model' in checkpoint:
-                            self.model.load_state_dict(checkpoint['model'])
-                        else:
-                            self.model.load_state_dict(checkpoint)
+
                         self.model.eval()
                         print(f"Model loaded from PyTorch checkpoint: {checkpoint_path}")
                         return

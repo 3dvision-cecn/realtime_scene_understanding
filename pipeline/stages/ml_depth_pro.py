@@ -61,7 +61,7 @@ class MLDepthEstimator(BaseDepthEstimator):
                         self.model, self.transform = depth_pro.create_model_and_transforms(
                             config=DEFAULT_MONODEPTH_CONFIG_DICT,
                             device=device,
-                            precision=torch.bfloat16,
+                            precision=torch.float32,
                         )
 
                         self.model.eval()

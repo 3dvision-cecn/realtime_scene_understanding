@@ -2,6 +2,7 @@
 
 # Default username (can be overridden with -u flag)
 CLUSTER_USER=${USER}
+SYNC_CACHE=true
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -10,6 +11,10 @@ while [[ $# -gt 0 ]]; do
       CLUSTER_USER="$2"
       shift 2
       ;;
+    --no-cache)
+      SYNC_CACHE=false
+      shift
+      ;;
     *)
       break
       ;;
@@ -17,11 +22,23 @@ while [[ $# -gt 0 ]]; do
 done
 
 # SYNC local changes
-ssh $CLUSTER_USER@euler mkdir -p /cluster/work/cvg/students/ndickenmann/3d_graph/pipeline
-rsync -avzh --info=progress2 * $CLUSTER_USER@euler:/cluster/work/cvg/students/ndickenmann/3d_graph/pipeline --exclude .git/ \
---exclude docker/singularity.sif --exclude samples/01.zip --exclude yolo12x.pt \
+ssh $CLUSTER_USER@euler mkdir -p /cluster/work/cvg/students/$CLUSTER_USER/3d_graph/pipeline
+rsync -avzh --info=progress2 * $CLUSTER_USER@euler:/cluster/work/cvg/students/$CLUSTER_USER/3d_graph/pipeline --exclude .git/ \
+--exclude docker/singularity.sif --exclude samples/01.zip \
 --exclude docker/singularity.sif.tar --exclude docker/singularity.sif \
 --exclude docker/singularity.sif.tar
+
+# SYNC HuggingFace cache for EdgeTAM RepViT model (optional)
+if [ "$SYNC_CACHE" = true ]; then
+  if [ -d ~/.cache/huggingface ]; then
+    ssh $CLUSTER_USER@euler mkdir -p /cluster/work/cvg/students/nec/.cache/huggingface
+    rsync -avzh --info=progress2 ~/.cache/huggingface/ $CLUSTER_USER@euler:/cluster/work/cvg/students/nec/.cache/huggingface/
+  else
+    echo "Warning: ~/.cache/huggingface not found, skipping cache sync"
+  fi
+else
+  echo "Skipping HuggingFace cache sync (use without --no-cache to enable)"
+fi
 
 
 cat <<EOT > job.sh
@@ -35,7 +52,7 @@ cat <<EOT > job.sh
 #SBATCH --job-name="training-$(date +"%Y-%m-%dT%H:%M")"
 
 # Pass the container profile first to run_singularity.sh, then all arguments intended for the executed script
-bash "/cluster/work/cvg/students/ndickenmann/3d_graph/pipeline/docker/run_singularity.sh" "/cluster/work/cvg/students/ndickenmann/3d_graph/pipeline" "$2" "${@:3}"
+bash "/cluster/work/cvg/students/$CLUSTER_USER/3d_graph/pipeline/docker/run_singularity.sh" "/cluster/work/cvg/students/$CLUSTER_USER/3d_graph/pipeline" "$CLUSTER_USER" "$2" "${@:3}"
 EOT
 
 ssh $CLUSTER_USER@euler sbatch < job.sh   

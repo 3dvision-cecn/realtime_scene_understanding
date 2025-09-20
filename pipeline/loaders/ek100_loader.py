@@ -100,6 +100,7 @@ class EK100Loader:
         video_path = os.path.join(
             self.video_base_path,
             self.current_narration.participant_id,
+            "videos",
             video_filename
         )
         

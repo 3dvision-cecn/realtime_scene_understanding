@@ -19,7 +19,7 @@ hand_detection_hamer:
   vitdet_checkpoint: /shared_storage/vitdet/model_final_f05665.pkl
 
 segmentation:
-  model_cfg: /shared_storage/checkpoints/checkpoints/edgetam/edgetam.yaml
+  model_cfg: edgetam.yaml
   model_path: /shared_storage/checkpoints/checkpoints/edgetam/edgetam.pt
   imgsz: 1280
   conf: 0.005
@@ -50,7 +50,7 @@ training_generator:
 
 ek100_loader:
   narration_csv_path: conf/ek100/EPIC100_train_small.csv
-  video_base_path: dataset/EPIC-KITCHENS-100/videos
+  video_base_path: /shared_storage/ek-100/EPIC-KITCHENS/
   frames_per_hypergraph: 16
   sliding_window_reduction: 8
   frame_sampling_interval: 1

@@ -8,19 +8,19 @@ vrs_loader:
   path: dataset/HD-EPIC/VRS/P01/P01-20240203-184045_anonymized.vrs
 
 hand_detection_mediapipe:
-  model_path: shared_storage/checkpoints/checkpoints/mediapipe/hand_landmarker.task
+  model_path: /shared_storage/checkpoints/checkpoints/mediapipe/hand_landmarker.task
 
 hand_detection_yolo:
-  model_path: shared_storage/checkpoints/checkpoints/yolo/best.pt
+  model_path: /shared_storage/checkpoints/checkpoints/yolo/best.pt
 
 hand_detection_hamer:
-  checkpoint: shared_storage/checkpoints/checkpoints/hamer_ckpts/checkpoints/hamer.ckpt
+  checkpoint: /shared_storage/checkpoints/checkpoints/checkpoints/hamer_ckpts/checkpoints/hamer.ckpt
   body_detector: "vitdet"
-  vitdet_checkpoint: shared_storage/checkpoints/checkpoints/hamer_ckpts/vitpose_ckpts/vitpose+_huge/wholebody.pth
+  vitdet_checkpoint: /shared_storage/vitdet/model_final_f05665.pkl
 
 segmentation:
-  model_cfg: checkpoints/edgetam/edgetam.yaml
-  model_path: checkpoints/edgetam/edgetam.pt
+  model_cfg: /shared_storage/checkpoints/checkpoints/edgetam/edgetam.yaml
+  model_path: /shared_storage/checkpoints/checkpoints/edgetam/edgetam.pt
   imgsz: 1280
   conf: 0.005
   iou: 0.5
@@ -44,8 +44,8 @@ pipeline:
 
 training_generator:
   avion:
-    pretrain_path: avion_pretrain_lavila_vitb_best.pt
-    fine_tune_path: avion_finetune_cls_lavila_vitb_best.pt
+    pretrain_path: shared_storage/checkpoints/checkpoints/avion/avion_pretrain_lavila_vitb_best.pt
+    fine_tune_path: shared_storage/checkpoints/checkpoints/avion/avion_finetune_cls_lavila_vitb_best.pt
   path: temp
 
 ek100_loader:

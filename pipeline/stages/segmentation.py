@@ -78,7 +78,7 @@ class Segmentation:
         torch.backends.cudnn.allow_tf32 = True
 
         # ────────────── SAM‑2 predictor (box prompt) ────────────────
-        self.sam_net = build_sam2(cfg.model_cfg, 'conf/' + cfg.model_path, apply_postprocessing=False, device=self.device).eval()
+        self.sam_net = build_sam2(cfg.model_cfg, cfg.model_path, apply_postprocessing=False, device=self.device).eval()
         # self.sam = SAM2AutomaticMaskGenerator(
         #         self.sam_net,
         #         points_per_side=32,

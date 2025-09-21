@@ -33,6 +33,57 @@ import torch.multiprocessing as mp
 
 # ──────────── CONFIGURE SEGMENT OUTPUT ────────────
 
+# ──────────── MODEL SINGLETON CACHE (per-device) ────────────
+_MODEL_CACHE = {}
+
+def _cache_key(name, device):
+    return f"{name}|{device}"
+
+def get_ek100_loader(cfg, device):
+    key = _cache_key("EK100Loader", device)
+    instance = _MODEL_CACHE.get(key)
+    if instance is None:
+        instance = EK100Loader(cfg.ek100_loader, device=device)
+        _MODEL_CACHE[key] = instance
+        print("Initialized EK-100 loader")
+    return instance
+
+def get_hand_detection(cfg, device):
+    key = _cache_key("HandDetection", device)
+    instance = _MODEL_CACHE.get(key)
+    if instance is None:
+        instance = HandDetection(cfg.hand_detection_hamer, device=device)
+        _MODEL_CACHE[key] = instance
+        print("Initialized hand detection")
+    return instance
+
+def get_segmentation(cfg, device):
+    key = _cache_key("Segmentation", device)
+    instance = _MODEL_CACHE.get(key)
+    if instance is None:
+        instance = Segmentation(cfg.segmentation, device=device)
+        _MODEL_CACHE[key] = instance
+        print("Initialized segmentation")
+    return instance
+
+def get_graph_generator(cfg, device):
+    key = _cache_key("GraphGenerator", device)
+    instance = _MODEL_CACHE.get(key)
+    if instance is None:
+        instance = GraphGenerator(cfg.graph_generator, device=device)
+        _MODEL_CACHE[key] = instance
+        print("Initialized graph generator")
+    return instance
+
+def get_training_generator(cfg, device):
+    key = _cache_key("EK100TrainingGenerator", device)
+    instance = _MODEL_CACHE.get(key)
+    if instance is None:
+        instance = EK100TrainingGenerator(cfg, device=device)
+        _MODEL_CACHE[key] = instance
+        print("Initialized training generator")
+    return instance
+
 def main(cfg, start_rerun: bool = False, device = "cuda"):
     # disable rerun's default logging
     # do not record the rerun if start_rerun is False
@@ -44,25 +95,25 @@ def main(cfg, start_rerun: bool = False, device = "cuda"):
     #rr.save(rec_path)                     # write to disk while logging 🡅
     
     if cfg.dataset == "ek100":
-        video_loader = EK100Loader(cfg.ek100_loader, device=device)
+        video_loader = get_ek100_loader(cfg, device)
         rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Y_UP, static=True)
     else:
         print("No video loader for this dataset")
         return
 
     # hand detection
-    hand_detection = HandDetection(cfg.hand_detection_hamer, device=device)
+    hand_detection = get_hand_detection(cfg, device)
     # hand_detection = YoloHandDetection(cfg.hand_detection_yolo)
 
     # segmentation
-    segmentation = Segmentation(cfg.segmentation, device=device)
+    segmentation = get_segmentation(cfg, device)
 
     # graph generator
-    graph_generator = GraphGenerator(cfg.graph_generator, device=device)
+    graph_generator = get_graph_generator(cfg, device)
 
     # training generator
     if cfg.dataset == "ek100":
-        training_generator = EK100TrainingGenerator(cfg, device=device)
+        training_generator = get_training_generator(cfg, device)
     else:
         print("No training generator for this dataset")
         return
@@ -246,13 +297,12 @@ def process_ek100_narration(cfg, narration_id: str, device: str = "cuda"):
     """
     print(f"Processing EK-100 narration: {narration_id}")
     
-    # Initialize components
-    video_loader = EK100Loader(cfg.ek100_loader, device=device)
-    hand_detection = HandDetection(cfg.hand_detection_hamer, device=device)
-    segmentation = Segmentation(cfg.segmentation, device=device)
-    graph_generator = GraphGenerator(cfg.graph_generator, device=device)
-    training_generator = EK100TrainingGenerator(cfg, device=device)
-    
+    # Initialize components (cached per device)
+    video_loader = get_ek100_loader(cfg, device)
+    hand_detection = get_hand_detection(cfg, device)
+    segmentation = get_segmentation(cfg, device)
+    graph_generator = get_graph_generator(cfg, device)
+    training_generator = get_training_generator(cfg, device)
     # Setup narration
     if not video_loader.setup_narration(narration_id):
         print(f"Failed to setup narration: {narration_id}")
@@ -285,9 +335,13 @@ def process_ek100_narration(cfg, narration_id: str, device: str = "cuda"):
         
         # Process each frame in the window
         for frame_idx, frame in enumerate(window_frames):
+            print(f"Processing frame {frame_idx} in window {window_count}")
             try:
                 # Generate depth estimation for this frame
                 depth, intrinsics = video_loader.depth_estimator.process_image(frame)
+
+                rr.log("raw_video/frame", rr.Image(frame).compress(jpeg_quality=85))
+                rr.log("depth_map", rr.Image(depth))
                 
                 # Generate pixel indexed point cloud
                 pose = np.eye(4, dtype=np.float32)  # Identity pose for EK-100
@@ -333,6 +387,29 @@ import argparse
 
 
 training_path = f"dataset/graph_samples_radio_epic_hd_new"
+
+
+def process_narration_with_gpu(args):
+    narration_id, gpu_id, cfg_dict = args
+    GlobalHydra.instance().clear()
+    with initialize(config_path="conf", version_base=None):
+        try:
+            # Set GPU device for this process
+            device = f"cuda:{gpu_id}"
+            
+            # Reconstruct config from dict
+            from omegaconf import OmegaConf
+            cfg = OmegaConf.create(cfg_dict)
+
+            print(f"Processing narration {narration_id} on GPU {gpu_id}")
+            
+            success = process_ek100_narration(cfg, narration_id, device=device)
+            print(f"Completed narration {narration_id} on GPU {gpu_id}: {'Success' if success else 'Failed'}")
+            return success
+        except Exception as e:
+            print(f"Error in process for {narration_id} on GPU {gpu_id}: {e}")
+            return False
+
 
 
 import copy
@@ -488,6 +565,7 @@ if __name__ == "__main__":
 
     elif args.dataset == "ek100":
         print("+++++++++++++++++++ USING EK-100")
+        from tqdm import tqdm
         
         with initialize(config_path="conf", version_base=None):
             cfg = compose(config_name="config")
@@ -505,24 +583,46 @@ if __name__ == "__main__":
             elif args.full:
                 # Process all narrations
                 print("Processing all EK-100 narrations...")
-                video_loader = EK100Loader(cfg.ek100_loader, device="cuda")
+                # rr.init("ek100_stream", spawn=True)
+                # rr.serve_web_viewer(open_browser=True)
+                video_loader = get_ek100_loader(cfg, device="cuda")
                 all_narrations = video_loader.get_all_narration_ids()
                 
                 print(f"Found {len(all_narrations)} narrations to process")
+
+                # Get number of available GPUs
+                num_gpus = torch.cuda.device_count()
+                print(f"Found {num_gpus} GPU(s) available")
+
+
+                # Create a pool of processes for parallel processing
+                    # Use multiprocessing with GPU assignment
+                from multiprocessing import Pool, Manager
+                import multiprocessing as mp
+            
                 
-                success_count = 0
+                # Convert config to dict for serialization
+                cfg_dict = OmegaConf.to_container(cfg, resolve=True)
+                
+                # Create arguments for each narration with GPU assignment
+                process_args = []
                 for i, narration_id in enumerate(all_narrations):
-                    print(f"\n[{i+1}/{len(all_narrations)}] Processing {narration_id}")
-                    try:
-                        if process_ek100_narration(cfg, narration_id):
-                            success_count += 1
-                        
-                        # Clean up GPU memory
-                        torch.cuda.empty_cache()
-                        gc.collect()
-                        
-                    except Exception as e:
-                        print(f"Error processing {narration_id}: {e}")
+                    gpu_id = i % num_gpus  # Round-robin GPU assignment
+                    process_args.append((narration_id, gpu_id, cfg_dict))
+
+                print(f"Number of process args: {len(process_args)}")
+                
+                mp.set_start_method("spawn", force=True)
+
+                # Use pool with number of processes equal to number of GPUs
+                with Pool(processes=num_gpus) as pool:
+                    results = list(tqdm(
+                        pool.imap(process_narration_with_gpu, process_args),
+                        total=len(all_narrations),
+                        desc="Processing narrations"
+                    ))
+                
+                success_count = sum(results)
                 
                 print(f"\n✓ Processed {success_count}/{len(all_narrations)} narrations successfully")
                 
@@ -530,9 +630,9 @@ if __name__ == "__main__":
                 # Interactive mode - process first narration as example
                 print("Running EK-100 interactive mode with first narration...")
                 rr.init("ek100_stream", spawn=True)
-                rr.serve_web_viewer(open_browser=False)
+                rr.serve_web_viewer(open_browser=True)
                 
-                video_loader = EK100Loader(cfg.ek100_loader, device="cuda")
+                video_loader = get_ek100_loader(cfg, device="cuda")
                 all_narrations = video_loader.get_all_narration_ids()
                 
                 if all_narrations:

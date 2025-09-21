@@ -45,6 +45,7 @@ class EK100Loader:
         if self.use_depth_estimation:
             # Get model path from config if available
             depth_model_path = getattr(cfg, 'depth_model_path', None)
+            print(f"Depth model path: {depth_model_path}")
             self.depth_estimator = MLDepthEstimator(device=device, model_path=depth_model_path)
             print("Initialized ML Depth Pro estimator for EK-100")
         else:

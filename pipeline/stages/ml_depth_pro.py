@@ -14,6 +14,9 @@ except ImportError:
     print("Warning: depth_pro package not available. Install Apple's ml-depth-pro for direct PyTorch loading.")
     DEPTH_PRO_AVAILABLE = False
 
+from transformers import DepthProImageProcessorFast, DepthProForDepthEstimation
+
+
 class MLDepthEstimator(BaseDepthEstimator):
     """ A depth estimator using a pre-trained model.
     This class extends the BaseDepthEstimator to implement a specific depth estimation method.
@@ -22,66 +25,12 @@ class MLDepthEstimator(BaseDepthEstimator):
     def __init__(self, device, model_path = None, config_path = None):
         super().__init__(device=device, model_path=model_path, config_path=config_path)
 
-        if model_path is not None:
-            print(f"Attempting to load DepthPro model from local path: {model_path}")
-            
-            # Check if we have a direct PyTorch checkpoint file
-            if model_path.endswith('.pt') or model_path.endswith('.pth'):
-                checkpoint_path = model_path
-            else:
-                # Look for depth_pro.pt in the directory
-                checkpoint_path = os.path.join(model_path, "depth_pro.pt")
-            
-            if os.path.exists(checkpoint_path):
-                try:
-                    if DEPTH_PRO_AVAILABLE:
-                        # Use the original Apple depth_pro implementation
-                        # The depth_pro library expects checkpoints at ./checkpoints/depth_pro.pt
-                        # So we need to create a symlink or copy the file there
-                        import shutil
-                        expected_checkpoint_dir = "./checkpoints"
-                        expected_checkpoint_path = os.path.join(expected_checkpoint_dir, "depth_pro.pt")
+        print(f"Initializing ML Depth Pro estimator for {device}")
+        self.image_processor = DepthProImageProcessorFast.from_pretrained("apple/DepthPro-hf", device=device)
+        self.model = DepthProForDepthEstimation.from_pretrained("apple/DepthPro-hf").to(self.device)
+        # Convert the weight to bfloat16
+        self.model.to(torch.bfloat16)
 
-                        # Create checkpoints directory if it doesn't exist
-                        os.makedirs(expected_checkpoint_dir, exist_ok=True)
-
-                        # Create symlink or copy if the expected path doesn't exist or points elsewhere
-                        if not os.path.exists(expected_checkpoint_path) or not os.path.samefile(checkpoint_path, expected_checkpoint_path):
-                            if os.path.exists(expected_checkpoint_path):
-                                os.remove(expected_checkpoint_path)
-                            try:
-                                os.symlink(os.path.abspath(checkpoint_path), expected_checkpoint_path)
-                                print(f"Created symlink: {expected_checkpoint_path} -> {checkpoint_path}")
-                            except OSError:
-                                # Fallback to copying if symlink fails
-                                shutil.copy2(checkpoint_path, expected_checkpoint_path)
-                                print(f"Copied checkpoint: {checkpoint_path} -> {expected_checkpoint_path}")
-
-                        # Create model and transforms with default config
-                        self.model, self.transform = depth_pro.create_model_and_transforms(
-                            config=DEFAULT_MONODEPTH_CONFIG_DICT,
-                            device=device,
-                            precision=torch.float32,
-                        )
-
-                        self.model.eval()
-                        print(f"Model loaded from PyTorch checkpoint: {checkpoint_path}")
-                        return
-                    else:
-                        print("depth_pro package not available, falling back to HuggingFace")
-                except Exception as e:
-                    print(f"Failed to load from PyTorch checkpoint {checkpoint_path}: {e}")
-                    
-            # Fallback to HuggingFace if available
-            try:
-                from transformers import DepthProImageProcessorFast, DepthProForDepthEstimation
-                self.image_processor = DepthProImageProcessorFast.from_pretrained(model_path, device=device, local_files_only=True)
-                self.model = DepthProForDepthEstimation.from_pretrained(model_path, local_files_only=True).to(self.device)
-                print(f"Model loaded from HuggingFace format: {model_path}")
-                return
-            except Exception as e:
-                print(f"Failed to load from HuggingFace format {model_path}: {e}")
-        
         print("No model path provided or all loading methods failed")
 
 

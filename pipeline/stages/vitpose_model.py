@@ -20,7 +20,7 @@ class ViTPoseModel(object):
     MODEL_DICT = {
         'ViTPose+-G (multi-task train, COCO)': {
             'config': f'third_party/hamer/third-party/ViTPose/configs/wholebody/2d_kpt_sview_rgb_img/topdown_heatmap/coco-wholebody/ViTPose_huge_wholebody_256x192.py',
-            'model': f'/shared_storage/checkpoints/checkpoints/hamer_ckpts/vitpose_ckpts/vitpose+_huge/wholebody.pth',
+            'model': f'conf/checkpoints/hamer_ckpts/vitpose_ckpts/vitpose+_huge/wholebody.pth',
         },
     }
 

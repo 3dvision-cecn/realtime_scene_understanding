@@ -23,11 +23,14 @@ done
 
 # SYNC local changes
 ssh $CLUSTER_USER@euler mkdir -p /cluster/work/cvg/students/$CLUSTER_USER/3d_graph/pipeline
-rsync -avzh --info=progress2 * $CLUSTER_USER@euler:/cluster/work/cvg/students/$CLUSTER_USER/3d_graph/pipeline --exclude .git/ \
---exclude docker/singularity.sif --exclude samples/01.zip \
---exclude docker/singularity.sif.tar --exclude docker/singularity.sif \
---exclude docker/singularity.sif.tar \
---exclude temp/*
+rsync -avzh --info=progress2 \
+--exclude '.git/' \
+--exclude 'docker/singularity.sif' \
+--exclude 'docker/singularity.sif.tar' \
+--exclude 'samples/01.zip' \
+--exclude 'temp/*' \
+* \
+$CLUSTER_USER@euler:/cluster/work/cvg/students/$CLUSTER_USER/3d_graph/pipeline
 
 # SYNC HuggingFace cache for EdgeTAM RepViT model (optional)
 if [ "$SYNC_CACHE" = true ]; then
@@ -47,7 +50,7 @@ cat <<EOT > job.sh
 
 #SBATCH -n 1
 #SBATCH --cpus-per-task=32
-#SBATCH --gpus=rtx_3090:1
+#SBATCH --gpus=rtx_4090:1
 #SBATCH --time=11:00:00
 #SBATCH --mem-per-cpu=4048
 #SBATCH --account=es_hutter
